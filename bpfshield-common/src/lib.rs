@@ -2,4 +2,4 @@
 pub mod models;
 pub mod utils;
 
-pub use models::Syscall;
+pub use models::{BtfEventType, BtfTraceEvent, Syscall};
