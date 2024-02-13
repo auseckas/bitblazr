@@ -42,7 +42,14 @@ pub struct Options {
 fn build_probe(path: &str, opts: &Options) -> Result<(), anyhow::Error> {
     let dir = PathBuf::from(path);
     let target = format!("--target={}", opts.target);
-    let mut args = vec!["build", target.as_str(), "-Z", "build-std=core"];
+    let mut args = vec![
+        "build",
+        target.as_str(),
+        "-Z",
+        "build-std=core",
+        "--target-dir=../target",
+    ];
+
     if opts.release {
         args.push("--release")
     }
@@ -62,5 +69,6 @@ fn build_probe(path: &str, opts: &Options) -> Result<(), anyhow::Error> {
 }
 
 pub fn build_ebpf(opts: Options) -> Result<(), anyhow::Error> {
-    build_probe("probes/tracepoints-ebpf", &opts)
+    build_probe("probes/tracepoints-ebpf", &opts)?;
+    build_probe("probes/lsm-ebpf", &opts)
 }

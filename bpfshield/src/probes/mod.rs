@@ -1,9 +1,11 @@
 pub mod btftracepoints;
+pub mod lsm;
 pub mod tracepoints;
-use aya::Bpf;
 
-pub fn load_probes(bpf: &mut Bpf) -> Result<(), anyhow::Error> {
-    tracepoints::Tracepoints::init(bpf)?;
-    btftracepoints::BtfTracepoints::init(bpf)?;
-    Ok(())
+use crate::events::EbpfEvent;
+use aya::Bpf;
+use crossbeam_channel::Sender;
+
+pub(crate) trait Probe {
+    fn init(&self, bpf: &mut Bpf, snd: Sender<EbpfEvent>) -> Result<(), anyhow::Error>;
 }
