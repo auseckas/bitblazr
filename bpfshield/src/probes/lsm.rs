@@ -1,11 +1,11 @@
 use super::Probe;
-use crate::events::{EbpfEvent, EbpfEventType};
 use aya::maps::perf::{AsyncPerfEventArray, PerfBufferError};
 use aya::maps::MapData;
 use aya::programs::Lsm;
 use aya::util::online_cpus;
 use aya::{Bpf, Btf};
-use bpfshield_common::{utils::str_from_buf_nul, Syscall};
+use bpfshield_common::models::{BShieldEvent, BShieldEventType};
+use bpfshield_common::{utils::str_from_buf_nul, LsmTraceEvent};
 use bytes::BytesMut;
 use std::result::Result;
 
@@ -22,7 +22,7 @@ impl LsmTracepoints {
 
             tokio::spawn(async move {
                 let mut buffers = (0..20)
-                    .map(|_| BytesMut::with_capacity(core::mem::size_of::<Syscall>()))
+                    .map(|_| BytesMut::with_capacity(core::mem::size_of::<LsmTraceEvent>()))
                     .collect::<Vec<_>>();
 
                 loop {
@@ -31,12 +31,24 @@ impl LsmTracepoints {
 
                     for i in 0..events.read {
                         let buf = &mut buffers[i];
-                        // let sc: &Syscall = unsafe { &*(buf.as_ptr() as *const Syscall) };
+                        let lsm_te: &LsmTraceEvent =
+                            unsafe { &*(buf.as_ptr() as *const LsmTraceEvent) };
+                        let p = str_from_buf_nul(&lsm_te.path).unwrap();
+                        if p.starts_with("/etc") {
+                            println!("LSM event path: {:?}", str_from_buf_nul(&lsm_te.path));
+                        }
                     }
                 }
                 Ok::<_, PerfBufferError>(())
             });
         }
+        Ok(())
+    }
+
+    fn load_program(&self, bpf: &mut Bpf, btf: &Btf, tp: &str) -> Result<(), anyhow::Error> {
+        let program: &mut Lsm = bpf.program_mut(tp).unwrap().try_into()?;
+        program.load(tp, &btf)?;
+        program.attach()?;
         Ok(())
     }
 }
@@ -45,16 +57,15 @@ impl Probe for LsmTracepoints {
     fn init(
         &self,
         bpf: &mut Bpf,
-        snd: crossbeam_channel::Sender<EbpfEvent>,
+        snd: crossbeam_channel::Sender<BShieldEvent>,
     ) -> Result<(), anyhow::Error> {
         let btf = Btf::from_sys_fs()?;
         let tp_array = AsyncPerfEventArray::try_from(bpf.take_map("LSM_BUFFER").unwrap())?;
 
         self.run(tp_array)?;
 
-        let program: &mut Lsm = bpf.program_mut("file_open").unwrap().try_into()?;
-        program.load("file_open", &btf)?;
-        program.attach()?;
+        self.load_program(bpf, &btf, "file_open")?;
+        self.load_program(bpf, &btf, "bprm_check_security")?;
 
         Ok(())
     }

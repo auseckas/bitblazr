@@ -1,10 +1,10 @@
 use super::Probe;
-use crate::events::{EbpfEvent, EbpfEventType};
 use aya::maps::perf::{AsyncPerfEventArray, PerfBufferError};
 use aya::maps::MapData;
 use aya::programs::TracePoint;
 use aya::util::online_cpus;
 use aya::Bpf;
+use bpfshield_common::models::{BShieldEvent, BShieldEventType};
 use bpfshield_common::BtfEventType;
 use bpfshield_common::{utils::str_from_buf_nul, Syscall};
 use bytes::BytesMut;
@@ -21,7 +21,7 @@ impl Tracepoints {
     fn run(
         &self,
         mut tp_array: AsyncPerfEventArray<MapData>,
-        snd: crossbeam_channel::Sender<EbpfEvent>,
+        snd: crossbeam_channel::Sender<BShieldEvent>,
     ) -> Result<(), anyhow::Error> {
         for cpu_id in online_cpus()? {
             let mut buf = tp_array.open(cpu_id, None)?;
@@ -40,13 +40,13 @@ impl Tracepoints {
                         let buf = &mut buffers[i];
                         let sc: &Syscall = unsafe { &*(buf.as_ptr() as *const Syscall) };
 
-                        let event = EbpfEvent {
+                        let event = BShieldEvent {
                             ppid: None,
                             tgid: sc.tgid,
                             pid: sc.pid,
                             uid: sc.uid,
                             gid: sc.gid,
-                            event: EbpfEventType::Exec,
+                            event: BShieldEventType::Exec,
                         };
                         if let Err(e) = thread_snd.send(event) {
                             warn!("Could not send Tracepoints event. Err: {}", e);
@@ -69,7 +69,7 @@ impl Probe for Tracepoints {
     fn init(
         &self,
         bpf: &mut Bpf,
-        snd: crossbeam_channel::Sender<EbpfEvent>,
+        snd: crossbeam_channel::Sender<BShieldEvent>,
     ) -> Result<(), anyhow::Error> {
         let tp_array = AsyncPerfEventArray::try_from(bpf.take_map("TP_BUFFER").unwrap())?;
 

@@ -1,4 +1,4 @@
-use crate::events::BpfShieldEvents;
+use crate::events::BSProcessTracker;
 use crate::probes::Probe;
 use aya::{include_bytes_aligned, Bpf, BpfLoader, Btf};
 use aya_log::BpfLogger;
@@ -7,17 +7,17 @@ use std::path::Path;
 use std::vec::Vec;
 
 pub struct EbpfLoader {
-    events: BpfShieldEvents,
+    tracker: BSProcessTracker,
 }
 
 impl EbpfLoader {
-    pub fn new(events: BpfShieldEvents) -> EbpfLoader {
-        EbpfLoader { events }
+    pub fn new(tracker: BSProcessTracker) -> EbpfLoader {
+        EbpfLoader { tracker }
     }
 
     pub fn attach(&self, bpf: &mut Bpf, probes: Vec<Box<dyn Probe>>) -> Result<(), anyhow::Error> {
         for probe in probes {
-            probe.init(bpf, self.events.snd.clone())?;
+            probe.init(bpf, self.tracker.snd.clone())?;
         }
         BpfLogger::init(bpf)?;
         Ok(())
