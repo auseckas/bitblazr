@@ -2,24 +2,16 @@ use crate::vmlinux::task_struct;
 
 use aya_bpf::BpfContext;
 
-use aya_bpf::maps::{PerCpuArray, PerfEventByteArray};
-use aya_bpf::{
-    helpers::bpf_get_current_comm, macros::btf_tracepoint, macros::map,
-    programs::BtfTracePointContext,
-};
-use aya_log_ebpf::info;
+use aya_bpf::{macros::btf_tracepoint, programs::BtfTracePointContext};
+use aya_log_ebpf::debug;
 
-use bpfshield_common::{BtfEventType, BtfTraceEvent};
+use bpfshield_common::{BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType};
 
-#[map]
-static mut LOCAL_BUFFER_BTF: PerCpuArray<BtfTraceEvent> = PerCpuArray::with_max_entries(1, 0);
-
-#[map]
-pub static mut BTP_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
+use crate::maps;
 
 #[btf_tracepoint(function = "sched_process_exec")]
 pub fn sched_process_exec(ctx: BtfTracePointContext) -> u32 {
-    match try_spe(ctx, BtfEventType::Exec) {
+    match try_spe(ctx, BShieldEventType::Exec) {
         Ok(ret) => ret,
         Err(ret) => ret,
     }
@@ -27,36 +19,36 @@ pub fn sched_process_exec(ctx: BtfTracePointContext) -> u32 {
 
 #[btf_tracepoint(function = "sched_process_exit")]
 pub fn sched_process_exit(ctx: BtfTracePointContext) -> u32 {
-    match try_spe(ctx, BtfEventType::Exit) {
+    match try_spe(ctx, BShieldEventType::Exit) {
         Ok(ret) => ret,
         Err(ret) => ret,
     }
 }
 
-fn try_spe(ctx: BtfTracePointContext, event_type: BtfEventType) -> Result<u32, u32> {
-    info!(&ctx, "btf tracepoint called");
+fn try_spe(ctx: BtfTracePointContext, event_type: BShieldEventType) -> Result<u32, u32> {
+    debug!(
+        &ctx,
+        "btf tracepoint called, call_type: {}", event_type as u16
+    );
 
     let task: *const task_struct = unsafe { ctx.arg(0) };
 
     let ppid = unsafe { (*(*task).parent).pid };
 
-    let buf_ptr = unsafe { LOCAL_BUFFER_BTF.get_ptr_mut(0).ok_or(1u32)? };
-    let bte: &mut BtfTraceEvent = unsafe { &mut *buf_ptr };
+    let buf_ptr = unsafe { maps::LOCAL_BUFFER.get_ptr_mut(0).ok_or(1u32)? };
+    let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
 
-    let comm = bpf_get_current_comm().map_err(|_| 1u32)?;
-
-    info!(&ctx, "Comm: {}", unsafe {
-        core::str::from_utf8_unchecked(&comm)
-    });
-
-    bte.event_type = event_type;
-    bte.ppid = ppid as u32;
-    bte.pid = ctx.pid();
-    bte.uid = ctx.uid();
-    bte.gid = ctx.gid();
+    be.class = BShieldEventClass::BtfTracepoint;
+    be.event_type = event_type;
+    be.ppid = Some(ppid as u32);
+    be.tgid = ctx.tgid();
+    be.pid = ctx.pid();
+    be.uid = ctx.uid();
+    be.gid = ctx.gid();
+    be.action = BShieldAction::Allow;
 
     unsafe {
-        BTP_BUFFER.output(&ctx, bte.to_bytes(), 0);
+        maps::TP_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
     Ok(0)

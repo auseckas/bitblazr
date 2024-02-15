@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
+use crate::utils::debug_event;
 use aya::maps::perf::PerfBufferError;
-use bpfshield_common::models::BShieldEvent;
+use bpfshield_common::models::{BShieldEvent, BShieldEventClass};
 use crossbeam_channel;
 
 #[derive(Debug)]
@@ -35,7 +36,19 @@ impl BSProcessTracker {
         tokio::spawn(async move {
             loop {
                 if let Ok(msg) = recv.recv() {
-                    println!("Got event: {:?}", msg);
+                    match msg.class {
+                        BShieldEventClass::Tracepoint => {
+                            println!("Got TP event: {:?}", debug_event(&msg));
+                        }
+                        BShieldEventClass::BtfTracepoint => {
+                            println!("Got BtfTP event: {:?}", debug_event(&msg));
+                        }
+                        BShieldEventClass::Lsm => {
+                            if msg.path.starts_with("/etc".as_bytes()) {
+                                println!("Got BtfTP event: {:?}", debug_event(&msg));
+                            }
+                        }
+                    }
                 } else {
                     break;
                 }

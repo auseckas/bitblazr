@@ -1,9 +1,7 @@
 use crate::events::BSProcessTracker;
 use crate::probes::Probe;
-use aya::{include_bytes_aligned, Bpf, BpfLoader, Btf};
+use aya::Bpf;
 use aya_log::BpfLogger;
-use std::fs;
-use std::path::Path;
 use std::vec::Vec;
 
 pub struct EbpfLoader {

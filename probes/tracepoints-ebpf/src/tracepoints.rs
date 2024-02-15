@@ -1,17 +1,12 @@
 use aya_bpf::BpfContext;
 
-use aya_bpf::maps::{PerCpuArray, PerfEventByteArray};
-use aya_bpf::{macros::map, macros::tracepoint, programs::TracePointContext};
-use aya_log_ebpf::info;
+use aya_bpf::helpers::bpf_probe_read_kernel_str_bytes;
+use aya_bpf::{macros::tracepoint, programs::TracePointContext};
+use aya_log_ebpf::debug;
 
 use crate::common::read_list_u8;
-use bpfshield_common::Syscall;
-
-#[map]
-static mut LOCAL_BUFFER: PerCpuArray<Syscall> = PerCpuArray::with_max_entries(1, 0);
-
-#[map]
-pub static mut TP_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
+use crate::maps;
+use bpfshield_common::{BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType};
 
 #[tracepoint]
 pub fn tracepoints(ctx: TracePointContext) -> u32 {
@@ -22,27 +17,29 @@ pub fn tracepoints(ctx: TracePointContext) -> u32 {
 }
 
 fn try_tps(ctx: TracePointContext) -> Result<u32, u32> {
-    info!(&ctx, "tracepoint syscalls called");
+    debug!(&ctx, "tracepoint called");
 
-    // let comm = ctx.command().map_err(|_| 1u32)?;
+    let comm = ctx.command().map_err(|_| 1u32)?;
 
-    // let s = unsafe { core::str::from_utf8_unchecked(&comm) };
-    let buf_ptr = unsafe { LOCAL_BUFFER.get_ptr_mut(0).ok_or(1u32)? };
-    let sc: &mut Syscall = unsafe { &mut *buf_ptr };
+    let buf_ptr = unsafe { maps::LOCAL_BUFFER.get_ptr_mut(0).ok_or(1u32)? };
+    let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
 
-    sc.tgid = ctx.tgid();
-    sc.pid = ctx.pid();
-    sc.uid = ctx.uid();
-    sc.gid = ctx.gid();
+    be.class = BShieldEventClass::Tracepoint;
+    be.event_type = BShieldEventType::Exec;
+    be.ppid = None;
+    be.tgid = ctx.tgid();
+    be.pid = ctx.pid();
+    be.uid = ctx.uid();
+    be.gid = ctx.gid();
+    be.action = BShieldAction::Allow;
+
+    unsafe { bpf_probe_read_kernel_str_bytes(comm.as_ptr(), &mut be.path).map_err(|_| 1u32)? };
 
     let argv_p = unsafe { ctx.read_at::<*const *const u8>(24).map_err(|_| 1u32)? };
-    sc.argv_count = read_list_u8(argv_p, &mut sc.argv)?;
-
-    let enpv_p = unsafe { ctx.read_at::<*const *const u8>(32).map_err(|_| 1u32)? };
-    sc.envp_count = read_list_u8(enpv_p, &mut sc.envp)?;
+    be.argv_count = read_list_u8(argv_p, &mut be.argv)?;
 
     unsafe {
-        TP_BUFFER.output(&ctx, sc.to_bytes(), 0);
+        maps::TP_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
     Ok(0)

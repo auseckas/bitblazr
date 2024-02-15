@@ -1,5 +1,5 @@
-use aya::{Bpf, BpfLoader};
-use log::{debug, info, warn};
+use aya::Bpf;
+use log::{debug, info};
 use tokio::signal;
 
 use crate::loader::EbpfLoader;
@@ -11,6 +11,7 @@ mod config;
 mod events;
 mod loader;
 pub mod probes;
+mod utils;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

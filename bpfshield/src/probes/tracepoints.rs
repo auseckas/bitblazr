@@ -4,9 +4,7 @@ use aya::maps::MapData;
 use aya::programs::TracePoint;
 use aya::util::online_cpus;
 use aya::Bpf;
-use bpfshield_common::models::{BShieldEvent, BShieldEventType};
-use bpfshield_common::BtfEventType;
-use bpfshield_common::{utils::str_from_buf_nul, Syscall};
+use bpfshield_common::models::BShieldEvent;
 use bytes::BytesMut;
 use log::warn;
 use std::result::Result;
@@ -29,7 +27,7 @@ impl Tracepoints {
 
             tokio::spawn(async move {
                 let mut buffers = (0..20)
-                    .map(|_| BytesMut::with_capacity(core::mem::size_of::<Syscall>()))
+                    .map(|_| BytesMut::with_capacity(core::mem::size_of::<BShieldEvent>()))
                     .collect::<Vec<_>>();
 
                 loop {
@@ -38,17 +36,9 @@ impl Tracepoints {
 
                     for i in 0..events.read {
                         let buf = &mut buffers[i];
-                        let sc: &Syscall = unsafe { &*(buf.as_ptr() as *const Syscall) };
+                        let be: &BShieldEvent = unsafe { &*(buf.as_ptr() as *const BShieldEvent) };
 
-                        let event = BShieldEvent {
-                            ppid: None,
-                            tgid: sc.tgid,
-                            pid: sc.pid,
-                            uid: sc.uid,
-                            gid: sc.gid,
-                            event: BShieldEventType::Exec,
-                        };
-                        if let Err(e) = thread_snd.send(event) {
+                        if let Err(e) = thread_snd.send(be.clone()) {
                             warn!("Could not send Tracepoints event. Err: {}", e);
                         }
 
