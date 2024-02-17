@@ -16,36 +16,33 @@ impl Tracepoints {
         Tracepoints {}
     }
 
+    #[allow(unreachable_code)]
     fn run(
         &self,
-        mut tp_array: AsyncPerfEventArray<MapData>,
+        bpf: &mut Bpf,
         snd: crossbeam_channel::Sender<BShieldEvent>,
     ) -> Result<(), anyhow::Error> {
+        let mut tp_array: AsyncPerfEventArray<_> = bpf.take_map("TP_BUFFER").unwrap().try_into()?;
+
         for cpu_id in online_cpus()? {
-            let mut buf = tp_array.open(cpu_id, None)?;
+            let mut tp_buf = tp_array.open(cpu_id, Some(128))?;
             let thread_snd = snd.clone();
 
             tokio::spawn(async move {
-                let mut buffers = (0..20)
-                    .map(|_| BytesMut::with_capacity(core::mem::size_of::<BShieldEvent>()))
-                    .collect::<Vec<_>>();
+                let mut buffer =
+                    vec![BytesMut::with_capacity(core::mem::size_of::<BShieldEvent>()); 100];
 
                 loop {
                     // wait for events
-                    let events = buf.read_events(&mut buffers).await?;
+                    let events = tp_buf.read_events(&mut buffer).await?;
 
                     for i in 0..events.read {
-                        let buf = &mut buffers[i];
+                        let buf = &mut buffer[i];
                         let be: &BShieldEvent = unsafe { &*(buf.as_ptr() as *const BShieldEvent) };
 
                         if let Err(e) = thread_snd.send(be.clone()) {
                             warn!("Could not send Tracepoints event. Err: {}", e);
                         }
-
-                        // println!("PID: {}, Arg Count: {}, Args:", sc.pid, sc.argv_count);
-                        // for i in 0..sc.argv_count {
-                        //     println!("Arg: {:?}", str_from_buf_nul(&sc.argv[i as usize]));
-                        // }
                     }
                 }
                 Ok::<_, PerfBufferError>(())
@@ -61,9 +58,7 @@ impl Probe for Tracepoints {
         bpf: &mut Bpf,
         snd: crossbeam_channel::Sender<BShieldEvent>,
     ) -> Result<(), anyhow::Error> {
-        let tp_array = AsyncPerfEventArray::try_from(bpf.take_map("TP_BUFFER").unwrap())?;
-
-        self.run(tp_array, snd)?;
+        self.run(bpf, snd)?;
 
         let program: &mut TracePoint = bpf.program_mut("tracepoints").unwrap().try_into()?;
         program.load()?;

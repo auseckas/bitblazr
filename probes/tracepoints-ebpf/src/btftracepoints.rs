@@ -7,7 +7,7 @@ use aya_log_ebpf::debug;
 
 use bpfshield_common::{BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType};
 
-use crate::maps;
+use crate::common::{LOCAL_BUFFER, TP_BUFFER};
 
 #[btf_tracepoint(function = "sched_process_exec")]
 pub fn sched_process_exec(ctx: BtfTracePointContext) -> u32 {
@@ -35,7 +35,7 @@ fn try_spe(ctx: BtfTracePointContext, event_type: BShieldEventType) -> Result<u3
 
     let ppid = unsafe { (*(*task).parent).pid };
 
-    let buf_ptr = unsafe { maps::LOCAL_BUFFER.get_ptr_mut(0).ok_or(1u32)? };
+    let buf_ptr = unsafe { LOCAL_BUFFER.get_ptr_mut(0).ok_or(1u32)? };
     let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
 
     be.class = BShieldEventClass::BtfTracepoint;
@@ -48,7 +48,7 @@ fn try_spe(ctx: BtfTracePointContext, event_type: BShieldEventType) -> Result<u3
     be.action = BShieldAction::Allow;
 
     unsafe {
-        maps::TP_BUFFER.output(&ctx, be.to_bytes(), 0);
+        TP_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
     Ok(0)

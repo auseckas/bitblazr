@@ -5,6 +5,7 @@ use aya::programs::Lsm;
 use aya::util::online_cpus;
 use aya::{Bpf, Btf};
 use bpfshield_common::models::BShieldEvent;
+use bpfshield_common::BShieldEventType;
 use bytes::BytesMut;
 use log::warn;
 use std::result::Result;
@@ -16,28 +17,33 @@ impl LsmTracepoints {
         LsmTracepoints {}
     }
 
+    #[allow(unreachable_code)]
     fn run(
         &self,
-        mut tp_array: AsyncPerfEventArray<MapData>,
+        bpf: &mut Bpf,
         snd: crossbeam_channel::Sender<BShieldEvent>,
     ) -> Result<(), anyhow::Error> {
+        let mut tp_array: AsyncPerfEventArray<_> =
+            bpf.take_map("LSM_BUFFER").unwrap().try_into()?;
+
         for cpu_id in online_cpus()? {
-            let mut buf = tp_array.open(cpu_id, None)?;
+            let mut lsm_buf = tp_array.open(cpu_id, Some(128))?;
 
             let thread_snd = snd.clone();
             tokio::spawn(async move {
-                let mut buffers = (0..20)
-                    .map(|_| BytesMut::with_capacity(core::mem::size_of::<BShieldEvent>()))
-                    .collect::<Vec<_>>();
+                let mut buffer =
+                    vec![BytesMut::with_capacity(core::mem::size_of::<BShieldEvent>()); 100];
 
                 loop {
                     // wait for events
-                    let events = buf.read_events(&mut buffers).await?;
+                    let events = lsm_buf.read_events(&mut buffer).await?;
 
-                    for i in 0..events.read {
-                        let buf = &mut buffers[i];
+                    if events.lost > 0 {
+                        warn!("Events lost in LSM_BUFFER: {}", events.lost);
+                    }
+
+                    for buf in buffer.iter().take(events.read) {
                         let be: &BShieldEvent = unsafe { &*(buf.as_ptr() as *const BShieldEvent) };
-
                         if let Err(e) = thread_snd.send(be.clone()) {
                             warn!("Could not send Tracepoints event. Err: {}", e);
                         }
@@ -64,9 +70,8 @@ impl Probe for LsmTracepoints {
         snd: crossbeam_channel::Sender<BShieldEvent>,
     ) -> Result<(), anyhow::Error> {
         let btf = Btf::from_sys_fs()?;
-        let tp_array = AsyncPerfEventArray::try_from(bpf.take_map("LSM_BUFFER").unwrap())?;
 
-        self.run(tp_array, snd)?;
+        self.run(bpf, snd)?;
 
         self.load_program(bpf, &btf, "file_open")?;
         self.load_program(bpf, &btf, "bprm_check_security")?;

@@ -4,8 +4,7 @@ use aya_bpf::helpers::bpf_probe_read_kernel_str_bytes;
 use aya_bpf::{macros::tracepoint, programs::TracePointContext};
 use aya_log_ebpf::debug;
 
-use crate::common::read_list_u8;
-use crate::maps;
+use crate::common::{read_list_u8, LOCAL_BUFFER, TP_BUFFER};
 use bpfshield_common::{BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType};
 
 #[tracepoint]
@@ -21,7 +20,7 @@ fn try_tps(ctx: TracePointContext) -> Result<u32, u32> {
 
     let comm = ctx.command().map_err(|_| 1u32)?;
 
-    let buf_ptr = unsafe { maps::LOCAL_BUFFER.get_ptr_mut(0).ok_or(1u32)? };
+    let buf_ptr = unsafe { LOCAL_BUFFER.get_ptr_mut(0).ok_or(1u32)? };
     let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
 
     be.class = BShieldEventClass::Tracepoint;
@@ -39,7 +38,7 @@ fn try_tps(ctx: TracePointContext) -> Result<u32, u32> {
     be.argv_count = read_list_u8(argv_p, &mut be.argv)?;
 
     unsafe {
-        maps::TP_BUFFER.output(&ctx, be.to_bytes(), 0);
+        TP_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
     Ok(0)

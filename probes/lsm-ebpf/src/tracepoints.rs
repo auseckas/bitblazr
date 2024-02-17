@@ -1,11 +1,13 @@
 use aya_bpf::BpfContext;
 
-use aya_bpf::helpers::{bpf_d_path, bpf_probe_read_kernel_str_bytes};
+use aya_bpf::helpers::{
+    bpf_d_path, bpf_get_current_task, bpf_probe_read, bpf_probe_read_kernel_str_bytes,
+};
 use aya_bpf::maps::{PerCpuArray, PerfEventByteArray};
 use aya_bpf::{macros::lsm, macros::map, programs::LsmContext};
-use aya_log_ebpf::debug;
+use aya_log_ebpf::{debug, info};
 
-use crate::vmlinux::{file, linux_binprm, path as lnx_path};
+use crate::vmlinux::{file, linux_binprm, path as lnx_path, task_struct};
 
 use aya_bpf::bindings::path;
 
@@ -39,30 +41,29 @@ fn process_lsm(ctx: LsmContext, et: BShieldEventType) -> Result<i32, i32> {
     let buf_ptr = unsafe { LOCAL_BUFFER_LSM.get_ptr_mut(0).ok_or(0i32)? };
     let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
 
+    let task: *const task_struct = unsafe { bpf_get_current_task() as *const _ };
+    let parent: *const task_struct = unsafe { bpf_probe_read(&(*task).parent).map_err(|_| -1i32)? };
+    let ppid = unsafe { bpf_probe_read(&(*parent).pid).map_err(|_| -1i32)? };
+
     be.class = BShieldEventClass::Lsm;
-    be.ppid = None;
+    be.ppid = Some(ppid as u32);
     be.tgid = ctx.tgid();
     be.pid = ctx.pid();
     be.uid = ctx.uid();
     be.gid = ctx.gid();
+    be.event_type = et;
+    be.action = BShieldAction::Allow;
 
     match et {
-        BShieldEventType::Open => process_lsm_file(ctx, be, et),
-        BShieldEventType::Bprm => process_lsm_binprm(ctx, be, et),
+        BShieldEventType::Open => process_lsm_file(ctx, be),
+        BShieldEventType::Bprm => process_lsm_binprm(ctx, be),
         _ => Ok(0),
     }
 }
 
-fn process_lsm_file(
-    ctx: LsmContext,
-    be: &mut BShieldEvent,
-    et: BShieldEventType,
-) -> Result<i32, i32> {
+fn process_lsm_file(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> {
     let f: *const file = unsafe { ctx.arg(0) };
     let p: *const lnx_path = unsafe { &(*f).f_path };
-
-    be.event_type = et;
-    be.action = BShieldAction::Allow;
 
     let _ = unsafe {
         bpf_d_path(
@@ -79,19 +80,12 @@ fn process_lsm_file(
     Ok(0)
 }
 
-fn process_lsm_binprm(
-    ctx: LsmContext,
-    be: &mut BShieldEvent,
-    et: BShieldEventType,
-) -> Result<i32, i32> {
+fn process_lsm_binprm(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> {
     let lb: *const linux_binprm = unsafe { ctx.arg(0) };
-
-    be.event_type = et;
-    be.action = BShieldAction::Allow;
 
     unsafe {
         bpf_probe_read_kernel_str_bytes((*lb).filename as *const u8, &mut be.path)
-            .map_err(|_| 0i32)?
+            .map_err(|_| 0i32)?;
     };
 
     unsafe {

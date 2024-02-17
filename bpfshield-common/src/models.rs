@@ -36,7 +36,7 @@ pub struct BShieldEvent {
     pub action: BShieldAction,
     pub path: [u8; 255],
     pub argv_count: u8,
-    pub argv: [[u8; 200]; 20],
+    pub argv: [[u8; 200]; crate::ARGV_COUNT],
 }
 
 impl BShieldEvent {
