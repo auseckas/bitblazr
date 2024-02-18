@@ -5,7 +5,7 @@ use aya_bpf::helpers::{
 };
 use aya_bpf::maps::{PerCpuArray, PerfEventByteArray};
 use aya_bpf::{macros::lsm, macros::map, programs::LsmContext};
-use aya_log_ebpf::{debug, info};
+use aya_log_ebpf::debug;
 
 use crate::vmlinux::{file, linux_binprm, path as lnx_path, task_struct};
 
@@ -29,7 +29,7 @@ pub fn file_open(ctx: LsmContext) -> i32 {
 
 #[lsm(hook = "bprm_check_security")]
 pub fn bprm_check_security(ctx: LsmContext) -> i32 {
-    match { process_lsm(ctx, BShieldEventType::Bprm) } {
+    match { process_lsm(ctx, BShieldEventType::Exec) } {
         Ok(ret) => ret,
         Err(ret) => ret,
     }
@@ -56,7 +56,7 @@ fn process_lsm(ctx: LsmContext, et: BShieldEventType) -> Result<i32, i32> {
 
     match et {
         BShieldEventType::Open => process_lsm_file(ctx, be),
-        BShieldEventType::Bprm => process_lsm_binprm(ctx, be),
+        BShieldEventType::Bprm => process_lsm_exec(ctx, be),
         _ => Ok(0),
     }
 }
@@ -74,13 +74,13 @@ fn process_lsm_file(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> 
     };
 
     unsafe {
-        LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+        // LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
     Ok(0)
 }
 
-fn process_lsm_binprm(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> {
+fn process_lsm_exec(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> {
     let lb: *const linux_binprm = unsafe { ctx.arg(0) };
 
     unsafe {

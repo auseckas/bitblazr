@@ -15,7 +15,7 @@ pub enum BShieldEventType {
     Bprm = 3,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub enum BShieldAction {
     Allow = 0,
@@ -34,6 +34,7 @@ pub struct BShieldEvent {
     pub uid: u32,
     pub gid: u32,
     pub action: BShieldAction,
+    pub p_path: [u8; 255],
     pub path: [u8; 255],
     pub argv_count: u8,
     pub argv: [[u8; 200]; crate::ARGV_COUNT],
