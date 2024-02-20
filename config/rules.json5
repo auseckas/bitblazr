@@ -1,0 +1,11 @@
+{ definitions:  [
+    // Block attempts to bind to sockets that are not on port 80 or 443
+    {
+        class: 'socket',
+        event: 'listen',
+        rules: {
+            port: [{neq: 80}, {neq: 443 }]
+        },
+        action: 'block'
+    }
+]}

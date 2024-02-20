@@ -14,6 +14,7 @@ pub enum BShieldEventType {
     Open = 2,
     Bprm = 3,
     Socket = 4,
+    Listen = 5,
 }
 
 #[derive(Debug, Copy, Clone)]

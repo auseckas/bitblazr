@@ -8,11 +8,14 @@ extern crate crossbeam_channel;
 extern crate serde_derive;
 
 mod config;
+mod errors;
 mod loader;
 pub mod probes;
 mod rules;
 mod tracker;
 mod utils;
+
+use errors::BSError;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -29,6 +32,7 @@ async fn main() -> Result<(), anyhow::Error> {
     if ret != 0 {
         debug!("remove limit on locked memory failed, ret is: {}", ret);
     }
+    rules::load_rules()?;
 
     let event_loop = tracker::BSProcessTracker::new()?;
     let bpf_loader = EbpfLoader::new(event_loop);
