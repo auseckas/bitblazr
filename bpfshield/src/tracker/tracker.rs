@@ -14,6 +14,12 @@ use moka::future::Cache;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
+pub struct BSProtoPort {
+    pub proto: u16,
+    pub port: u16,
+}
+
+#[derive(Debug, Clone)]
 pub struct BSProcess {
     pub created: DateTime<Utc>,
     pub tgid: u32,
@@ -23,6 +29,7 @@ pub struct BSProcess {
     pub gid: u32,
     pub p_path: String,
     pub path: String,
+    pub proto_port: Vec<BSProtoPort>,
     pub action: BShieldAction,
     pub children: Vec<u32>, // [pid,...]
     pub argv: Vec<String>,
@@ -148,6 +155,19 @@ impl BSProcessTracker {
                                                 }
                                             }
                                         }
+                                        match event.event_type {
+                                            BShieldEventType::Socket => {
+                                                if event.protocol > 0 {
+                                                    e.proto_port.push({
+                                                        BSProtoPort {
+                                                            proto: event.protocol,
+                                                            port: event.port,
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                            _ => (),
+                                        };
                                         arc_e
                                     }
                                     None => {
@@ -164,7 +184,7 @@ impl BSProcessTracker {
                                             p_path: utils::str_from_buf_nul(&event.p_path)
                                                 .unwrap_or("")
                                                 .to_string(),
-
+                                            proto_port: Vec::new(),
                                             action: event.action,
                                             children: Vec::new(),
                                             argv: BSProcessTracker::process_argv(&event),
@@ -175,12 +195,28 @@ impl BSProcessTracker {
                                                 e.argv.remove(0);
                                             }
                                         }
+                                        match event.event_type {
+                                            BShieldEventType::Socket => {
+                                                if event.protocol > 0 {
+                                                    e.proto_port.push({
+                                                        BSProtoPort {
+                                                            proto: event.protocol,
+                                                            port: event.port,
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                            _ => (),
+                                        };
 
                                         Arc::new(e)
                                     }
                                 };
 
-                                if event.path.starts_with("/usr/bin".as_bytes()) {
+                                // if event.path.starts_with("/usr/bin".as_bytes()) {
+                                //     println!("Entry: {:#?}", entry);
+                                // }
+                                if matches!(event.event_type, BShieldEventType::Socket) {
                                     println!("Entry: {:#?}", entry);
                                 }
                                 std::future::ready(entry)

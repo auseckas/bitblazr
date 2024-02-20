@@ -5,9 +5,9 @@ use aya_bpf::helpers::{
 };
 use aya_bpf::maps::{PerCpuArray, PerfEventByteArray};
 use aya_bpf::{macros::lsm, macros::map, programs::LsmContext};
-use aya_log_ebpf::debug;
+use aya_log_ebpf::{debug, info};
 
-use crate::vmlinux::{file, linux_binprm, path as lnx_path, task_struct};
+use crate::vmlinux::{file, linux_binprm, path as lnx_path, socket, task_struct};
 
 use aya_bpf::bindings::path;
 
@@ -35,6 +35,14 @@ pub fn bprm_check_security(ctx: LsmContext) -> i32 {
     }
 }
 
+#[lsm(hook = "socket_listen")]
+pub fn socket_listen(ctx: LsmContext) -> i32 {
+    match { process_lsm(ctx, BShieldEventType::Socket) } {
+        Ok(ret) => ret,
+        Err(ret) => ret,
+    }
+}
+
 fn process_lsm(ctx: LsmContext, et: BShieldEventType) -> Result<i32, i32> {
     debug!(&ctx, "lsm tracepoint called, call_type: {}", et as u16);
 
@@ -51,12 +59,15 @@ fn process_lsm(ctx: LsmContext, et: BShieldEventType) -> Result<i32, i32> {
     be.pid = ctx.pid();
     be.uid = ctx.uid();
     be.gid = ctx.gid();
+    be.protocol = 0;
+    be.port = 0;
     be.event_type = et;
     be.action = BShieldAction::Allow;
 
     match et {
         BShieldEventType::Open => process_lsm_file(ctx, be),
         BShieldEventType::Bprm => process_lsm_exec(ctx, be),
+        BShieldEventType::Socket => process_lsm_socket(ctx, be),
         _ => Ok(0),
     }
 }
@@ -92,5 +103,17 @@ fn process_lsm_exec(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> 
         LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
+    Ok(0)
+}
+
+fn process_lsm_socket(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> {
+    let socket: *const socket = unsafe { ctx.arg(0) };
+    be.protocol = unsafe { (*(*socket).sk).sk_protocol };
+    let port_pair: u32 = unsafe { (*(*socket).sk).__sk_common.__bindgen_anon_3.skc_portpair };
+    be.port = (port_pair >> 16) as u16 & 0xffff;
+
+    unsafe {
+        LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+    }
     Ok(0)
 }

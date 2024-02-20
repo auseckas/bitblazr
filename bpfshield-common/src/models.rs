@@ -13,6 +13,7 @@ pub enum BShieldEventType {
     Exit = 1,
     Open = 2,
     Bprm = 3,
+    Socket = 4,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -34,6 +35,8 @@ pub struct BShieldEvent {
     pub uid: u32,
     pub gid: u32,
     pub action: BShieldAction,
+    pub protocol: u16,
+    pub port: u16,
     pub p_path: [u8; 255],
     pub path: [u8; 255],
     pub argv_count: u8,

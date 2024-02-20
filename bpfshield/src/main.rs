@@ -10,6 +10,7 @@ extern crate serde_derive;
 mod config;
 mod loader;
 pub mod probes;
+mod rules;
 mod tracker;
 mod utils;
 
