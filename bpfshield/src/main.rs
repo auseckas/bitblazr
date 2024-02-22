@@ -32,7 +32,6 @@ async fn main() -> Result<(), anyhow::Error> {
     if ret != 0 {
         debug!("remove limit on locked memory failed, ret is: {}", ret);
     }
-    rules::load_rules()?;
 
     let event_loop = tracker::BSProcessTracker::new()?;
     let bpf_loader = EbpfLoader::new(event_loop);

@@ -1,9 +1,10 @@
 use aya_bpf::BpfContext;
 
 use aya_bpf::helpers::{
-    bpf_d_path, bpf_get_current_task, bpf_probe_read, bpf_probe_read_kernel_str_bytes,
+    bpf_d_path, bpf_get_current_task, bpf_probe_read, bpf_probe_read_kernel,
+    bpf_probe_read_kernel_str_bytes,
 };
-use aya_bpf::maps::{PerCpuArray, PerfEventByteArray};
+use aya_bpf::maps::{Array, HashMap, PerCpuArray, PerfEventByteArray};
 use aya_bpf::{macros::lsm, macros::map, programs::LsmContext};
 use aya_log_ebpf::{debug, info};
 
@@ -11,13 +12,23 @@ use crate::vmlinux::{file, linux_binprm, path as lnx_path, socket, task_struct};
 
 use aya_bpf::bindings::path;
 
-use bpfshield_common::{BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType};
+use bpfshield_common::{
+    rules::BSRuleClass, rules::BShieldOp, rules::BShieldRule, rules::BShieldRules,
+    rules::BShieldRulesKey, BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType,
+};
 
 #[map]
 static mut LOCAL_BUFFER_LSM: PerCpuArray<BShieldEvent> = PerCpuArray::with_max_entries(1, 0);
 
 #[map]
 pub static mut LSM_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
+
+#[map]
+pub(crate) static mut LSM_RULES: HashMap<BShieldRulesKey, [BShieldRule; 25]> =
+    HashMap::with_max_entries(100, 0);
+
+#[map]
+pub(crate) static mut LSM_RULE_OPS: Array<BShieldOp> = Array::with_max_entries(1000, 0);
 
 #[lsm(hook = "file_open")]
 pub fn file_open(ctx: LsmContext) -> i32 {
@@ -111,6 +122,42 @@ fn process_lsm_socket(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32
     be.protocol = unsafe { (*(*socket).sk).sk_protocol };
     let port_pair: u32 = unsafe { (*(*socket).sk).__sk_common.__bindgen_anon_3.skc_portpair };
     be.port = (port_pair >> 16) as u16 & 0xffff;
+
+    let key = BShieldRulesKey {
+        class: BSRuleClass::Socket as i32,
+        event_type: BShieldEventType::Listen as i32,
+    };
+
+    let mut block = false;
+
+    if let Some(rules) = unsafe { LSM_RULES.get(&key) } {
+        let mut i = 0;
+        let mut class = 0;
+        for rule in rules {
+            if matches!(rule.action, BShieldAction::Block) {
+                block = true;
+            }
+            for idx in rule.ops {
+                if idx < 0 {
+                    break;
+                }
+                let op = unsafe { LSM_RULE_OPS.get(idx as u32).ok_or(0i32)? };
+                info!(&ctx, "Target: {}", op.target as i64);
+            }
+            // info!(&ctx, "Rule IDS: {}, i: {}", idx, i);
+            i += 1;
+            class = rule.class as i32;
+        }
+        info!(
+            &ctx,
+            "Final I: {}, class: {}, block: {}", i, class, block as u8
+        );
+        // for i in 0..100 {
+        //     info!(&ctx, "i: {}, class is Socket: {}", i, unsafe {
+        //         *rules.rules.get(i)?
+        //     });
+        // }
+    }
 
     unsafe {
         LSM_BUFFER.output(&ctx, be.to_bytes(), 0);

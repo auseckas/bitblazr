@@ -1,13 +1,18 @@
 use super::Probe;
+use crate::rules;
 use aya::maps::perf::{AsyncPerfEventArray, PerfBufferError};
-use aya::maps::MapData;
+use aya::maps::{Array, HashMap as AyaHashMap, MapData};
 use aya::programs::Lsm;
 use aya::util::online_cpus;
 use aya::{Bpf, Btf};
 use bpfshield_common::models::BShieldEvent;
-use bpfshield_common::BShieldEventType;
+use bpfshield_common::rules::{
+    BSRuleClass, BSRuleCommand, BSRuleTarget, BShieldOp, BShieldRule, BShieldRules, BShieldRulesKey,
+};
+use bpfshield_common::{BShieldAction, BShieldEventType};
 use bytes::BytesMut;
 use log::warn;
+use std::collections::HashMap;
 use std::result::Result;
 
 pub struct LsmTracepoints {}
@@ -61,6 +66,44 @@ impl LsmTracepoints {
         program.attach()?;
         Ok(())
     }
+
+    fn load_rules(&self, bpf: &mut Bpf) -> Result<(), anyhow::Error> {
+        const RULE_UNDEFINED: BShieldRule = BShieldRule {
+            class: BSRuleClass::Undefined,
+            event: BShieldEventType::Undefined,
+            ops: [-1; 25],
+            action: BShieldAction::Undefined,
+        };
+
+        let mut map_rules: AyaHashMap<&mut MapData, BShieldRulesKey, [BShieldRule; 25]> =
+            AyaHashMap::try_from(bpf.map_mut("LSM_RULES").unwrap()).unwrap();
+
+        let (lsm_rules, shield_ops) = rules::load_rules()?;
+        for (key, rules) in lsm_rules.into_iter() {
+            let mut rules_buf = [RULE_UNDEFINED; 25];
+            for (i, rule) in rules.into_iter().enumerate() {
+                if i >= 25 {
+                    break;
+                }
+                rules_buf[i] = rule;
+            }
+
+            println!("Rules size: {}", std::mem::size_of_val(&rules_buf));
+            map_rules.insert(key, rules_buf, 0)?;
+        }
+
+        let mut array_rule_ops: Array<&mut MapData, BShieldOp> =
+            Array::try_from(bpf.map_mut("LSM_RULE_OPS").unwrap()).unwrap();
+
+        for (i, op) in shield_ops.into_iter().enumerate() {
+            if i >= 25 {
+                break;
+            }
+            array_rule_ops.set(i as u32, op, 0)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl Probe for LsmTracepoints {
@@ -72,6 +115,7 @@ impl Probe for LsmTracepoints {
         let btf = Btf::from_sys_fs()?;
 
         self.run(bpf, snd)?;
+        self.load_rules(bpf)?;
 
         self.load_program(bpf, &btf, "file_open")?;
         self.load_program(bpf, &btf, "bprm_check_security")?;

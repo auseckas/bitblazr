@@ -1,3 +1,5 @@
+use crate::rules::BSRuleVar;
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub enum BShieldEventClass {
@@ -9,6 +11,7 @@ pub enum BShieldEventClass {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub enum BShieldEventType {
+    Undefined = -1,
     Exec = 0,
     Exit = 1,
     Open = 2,
@@ -17,12 +20,46 @@ pub enum BShieldEventType {
     Listen = 5,
 }
 
+impl BSRuleVar for BShieldEventType {
+    fn from_str(s: &mut str) -> Self {
+        s.make_ascii_lowercase();
+        match s.trim() {
+            "exec" => BShieldEventType::Exec,
+            "exit" => BShieldEventType::Exit,
+            "open" => BShieldEventType::Open,
+            "listen" => BShieldEventType::Listen,
+            _ => BShieldEventType::Undefined,
+        }
+    }
+
+    fn is_undefined(&self) -> bool {
+        matches!(self, BShieldEventType::Undefined)
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub enum BShieldAction {
+    Undefined = -1,
     Allow = 0,
     Block = 1,
     Ignore = 2,
+}
+
+impl BSRuleVar for BShieldAction {
+    fn from_str(s: &mut str) -> Self {
+        s.make_ascii_lowercase();
+        match s.trim() {
+            "allow" => BShieldAction::Allow,
+            "block" => BShieldAction::Block,
+            "ignore" => BShieldAction::Ignore,
+            _ => BShieldAction::Undefined,
+        }
+    }
+
+    fn is_undefined(&self) -> bool {
+        matches!(self, BShieldAction::Undefined)
+    }
 }
 
 #[derive(Debug, Clone)]
