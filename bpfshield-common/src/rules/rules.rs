@@ -1,6 +1,6 @@
-use crate::{BShieldAction, BShieldEventClass, BShieldEventType};
+use crate::{BShieldAction, BShieldEventType};
 
-pub trait BSRuleVar {
+pub trait BShieldRuleVar {
     fn from_str(_: &mut str) -> Self;
     fn is_undefined(&self) -> bool {
         false
@@ -9,86 +9,88 @@ pub trait BSRuleVar {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
-pub enum BSRuleTarget {
+pub enum BShieldRuleTarget {
     Undefined = -1,
     Port = 0,
     Path = 1,
 }
 
-impl BSRuleVar for BSRuleTarget {
+impl BShieldRuleVar for BShieldRuleTarget {
     fn from_str(s: &mut str) -> Self {
         s.make_ascii_lowercase();
         match s.trim() {
-            "port" => BSRuleTarget::Port,
-            "path" => BSRuleTarget::Path,
-            _ => BSRuleTarget::Undefined,
+            "port" => BShieldRuleTarget::Port,
+            "path" => BShieldRuleTarget::Path,
+            _ => BShieldRuleTarget::Undefined,
         }
     }
 
     fn is_undefined(&self) -> bool {
-        matches!(self, BSRuleTarget::Undefined)
+        matches!(self, BShieldRuleTarget::Undefined)
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub enum BSRuleCommand {
+pub enum BShieldRuleCommand {
     Undefined = -1,
     Eq = 0,
     Neq = 1,
     StartsWith = 2,
     EndsWith = 3,
+    Not = 4,
 }
 
-impl BSRuleVar for BSRuleCommand {
+impl BShieldRuleVar for BShieldRuleCommand {
     fn from_str(s: &mut str) -> Self {
         s.make_ascii_lowercase();
         match s.trim() {
-            "eq" => BSRuleCommand::Eq,
-            "neq" => BSRuleCommand::Neq,
-            "starts_with" => BSRuleCommand::StartsWith,
-            "ends_with" => BSRuleCommand::EndsWith,
-            _ => BSRuleCommand::Undefined,
+            "eq" => BShieldRuleCommand::Eq,
+            "neq" => BShieldRuleCommand::Neq,
+            "starts_with" => BShieldRuleCommand::StartsWith,
+            "ends_with" => BShieldRuleCommand::EndsWith,
+            "not" => BShieldRuleCommand::Not,
+            _ => BShieldRuleCommand::Undefined,
         }
     }
 
     fn is_undefined(&self) -> bool {
-        matches!(self, BSRuleCommand::Undefined)
+        matches!(self, BShieldRuleCommand::Undefined)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
-pub enum BSRuleClass {
+pub enum BShieldRuleClass {
     Undefined = -1,
     Socket = 0,
     File = 1,
 }
 
-impl BSRuleClass {
-    pub fn is_supported_target(&self, t: &BSRuleTarget) -> bool {
-        let socket_targets = &[BSRuleTarget::Port];
-        let file_targets = &[BSRuleTarget::Path];
+impl BShieldRuleClass {
+    pub fn is_supported_target(&self, t: &BShieldRuleTarget) -> bool {
+        let socket_targets = &[BShieldRuleTarget::Port];
+        let file_targets = &[BShieldRuleTarget::Path];
         match self {
-            BSRuleClass::Socket => socket_targets.iter().find(|target| *target == t).is_some(),
-            BSRuleClass::File => file_targets.iter().find(|target| *target == t).is_some(),
+            BShieldRuleClass::Socket => socket_targets.iter().find(|target| *target == t).is_some(),
+            BShieldRuleClass::File => file_targets.iter().find(|target| *target == t).is_some(),
             _ => false,
         }
     }
 }
 
-impl BSRuleVar for BSRuleClass {
+impl BShieldRuleVar for BShieldRuleClass {
     fn from_str(s: &mut str) -> Self {
         s.make_ascii_lowercase();
         match s.trim() {
-            "socket" => BSRuleClass::Socket,
-            "file" => BSRuleClass::File,
-            _ => BSRuleClass::Undefined,
+            "socket" => BShieldRuleClass::Socket,
+            "file" => BShieldRuleClass::File,
+            _ => BShieldRuleClass::Undefined,
         }
     }
 
     fn is_undefined(&self) -> bool {
-        matches!(self, BSRuleClass::Undefined)
+        matches!(self, BShieldRuleClass::Undefined)
     }
 }
 
@@ -111,17 +113,18 @@ pub struct BShieldVar {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct BShieldOp {
-    pub target: BSRuleTarget,
-    pub command: BSRuleCommand,
+    pub target: BShieldRuleTarget,
+    pub negate: bool,
+    pub command: BShieldRuleCommand,
     pub var: BShieldVar,
 }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct BShieldRule {
-    pub class: BSRuleClass,
+    pub class: BShieldRuleClass,
     pub event: BShieldEventType,
-    pub ops: [i32; 25], // positions in Rule ops array
+    pub ops: [i32; 15], // positions in Rule ops array
     pub action: BShieldAction,
 }
 

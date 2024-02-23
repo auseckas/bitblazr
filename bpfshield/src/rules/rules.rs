@@ -1,15 +1,12 @@
 use crate::BSError;
-use bpfshield_common::{
-    rules::*, utils::hash_nul_str, BShieldAction, BShieldEventClass, BShieldEventType,
-};
+use bpfshield_common::{rules::*, BShieldAction, BShieldEventType, OPS_PER_RULE};
 use config::{Config, File, FileFormat};
 use log::warn;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::env;
-use std::hash::Hash;
 
-fn get_field<T: BSRuleVar>(src: &mut Value, f: &str) -> Result<T, anyhow::Error> {
+fn get_field<T: BShieldRuleVar>(src: &mut Value, f: &str) -> Result<T, anyhow::Error> {
     let mut class_str = src
         .get_mut(f)
         .and_then(|c| c.as_str())
@@ -31,9 +28,9 @@ fn get_field<T: BSRuleVar>(src: &mut Value, f: &str) -> Result<T, anyhow::Error>
     Ok(var)
 }
 
-fn value_to_var(target: &BSRuleTarget, src: &mut Value) -> Result<BShieldVar, anyhow::Error> {
+fn value_to_var(target: &BShieldRuleTarget, src: &mut Value) -> Result<BShieldVar, anyhow::Error> {
     let var = match *target {
-        BSRuleTarget::Port => {
+        BShieldRuleTarget::Port => {
             let port = match src.as_u64() {
                 Some(p) => p as i64,
                 None => {
@@ -51,7 +48,7 @@ fn value_to_var(target: &BSRuleTarget, src: &mut Value) -> Result<BShieldVar, an
                 sbuf: [0; 25],
             }
         }
-        BSRuleTarget::Path => {
+        BShieldRuleTarget::Path => {
             let path = match src.as_str() {
                 Some(s) => s,
                 None => {
@@ -97,14 +94,14 @@ fn value_to_var(target: &BSRuleTarget, src: &mut Value) -> Result<BShieldVar, an
 
 fn parse_ops(
     shield_ops: &mut Vec<BShieldOp>,
-    target: &BSRuleTarget,
+    target: &BShieldRuleTarget,
     cs: &mut Value,
 ) -> Result<Vec<i32>, anyhow::Error> {
     let mut ops_idx: Vec<i32> = Vec::new();
 
     for obj in cs.as_array_mut().unwrap_or(&mut Vec::new()) {
         for (c, v) in obj.as_object_mut().unwrap_or(&mut Map::new()) {
-            let comm = BSRuleCommand::from_str(c.to_string().as_mut_str());
+            let comm = BShieldRuleCommand::from_str(c.trim().to_string().as_mut_str());
             if comm.is_undefined() {
                 return Err(BSError::InvalidAttribute {
                     attribute: "command",
@@ -112,10 +109,20 @@ fn parse_ops(
                 }
                 .into());
             }
+            if matches!(comm, BShieldRuleCommand::Not) {
+                let ids = parse_ops(shield_ops, target, &mut Value::from(vec![v.clone()]))?;
+                for id in ids {
+                    shield_ops.get_mut(id as usize).map(|op| op.negate = true);
+                    ops_idx.push(id);
+                }
+                continue;
+            }
+
             let var = value_to_var(target, v)?;
 
             let op = BShieldOp {
                 target: *target,
+                negate: false,
                 command: comm,
                 var: var,
             };
@@ -151,7 +158,7 @@ pub(crate) fn load_rules(
         for mut rule in defs.as_array_mut().unwrap_or(&mut Vec::new()) {
             let mut shield_ops_idx: Vec<i32> = Vec::new();
 
-            let class: BSRuleClass = get_field(&mut rule, "class")?;
+            let class: BShieldRuleClass = get_field(&mut rule, "class")?;
             let event: BShieldEventType = get_field(&mut rule, "event")?;
             let action: BShieldAction = get_field(&mut rule, "action")?;
 
@@ -169,7 +176,8 @@ pub(crate) fn load_rules(
                 .and_then(|tg| tg.as_object_mut())
                 .unwrap_or(&mut Map::new())
             {
-                let target: BSRuleTarget = BSRuleTarget::from_str(t.to_string().as_mut_str());
+                let target: BShieldRuleTarget =
+                    BShieldRuleTarget::from_str(t.to_string().as_mut_str());
                 if !class.is_supported_target(&target) {
                     warn!(
                         "Unsupported target: {:?}, for class: {:?}. Skipping the rule.",
@@ -184,7 +192,7 @@ pub(crate) fn load_rules(
                 continue;
             }
 
-            let mut rule_ops_idx = [-1i32; 25];
+            let mut rule_ops_idx = [-1i32; OPS_PER_RULE];
             for (i, idx) in shield_ops_idx.into_iter().enumerate() {
                 rule_ops_idx[i] = idx;
             }

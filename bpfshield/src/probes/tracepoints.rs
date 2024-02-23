@@ -1,6 +1,5 @@
 use super::Probe;
 use aya::maps::perf::{AsyncPerfEventArray, PerfBufferError};
-use aya::maps::MapData;
 use aya::programs::TracePoint;
 use aya::util::online_cpus;
 use aya::Bpf;

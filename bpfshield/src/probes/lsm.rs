@@ -6,14 +6,10 @@ use aya::programs::Lsm;
 use aya::util::online_cpus;
 use aya::{Bpf, Btf};
 use bpfshield_common::models::BShieldEvent;
-use bpfshield_common::rules::{
-    BSRuleClass, BSRuleCommand, BSRuleTarget, BShieldOp, BShieldRule, BShieldRules,
-    BShieldRulesKey, BShieldVar,
-};
-use bpfshield_common::{BShieldAction, BShieldEventType};
+use bpfshield_common::rules::{BShieldOp, BShieldRule, BShieldRuleClass, BShieldRulesKey};
+use bpfshield_common::{BShieldAction, BShieldEventType, OPS_PER_RULE, RULES_PER_KEY};
 use bytes::BytesMut;
 use log::warn;
-use std::collections::HashMap;
 use std::result::Result;
 
 pub struct LsmTracepoints {}
@@ -70,18 +66,18 @@ impl LsmTracepoints {
 
     fn load_rules(&self, bpf: &mut Bpf) -> Result<(), anyhow::Error> {
         const RULE_UNDEFINED: BShieldRule = BShieldRule {
-            class: BSRuleClass::Undefined,
+            class: BShieldRuleClass::Undefined,
             event: BShieldEventType::Undefined,
-            ops: [-1; 25],
+            ops: [-1; OPS_PER_RULE],
             action: BShieldAction::Undefined,
         };
 
-        let mut map_rules: AyaHashMap<&mut MapData, BShieldRulesKey, [BShieldRule; 25]> =
+        let mut map_rules: AyaHashMap<&mut MapData, BShieldRulesKey, [BShieldRule; RULES_PER_KEY]> =
             AyaHashMap::try_from(bpf.map_mut("LSM_RULES").unwrap()).unwrap();
 
         let (lsm_rules, shield_ops) = rules::load_rules()?;
         for (key, rules) in lsm_rules.into_iter() {
-            let mut rules_buf = [RULE_UNDEFINED; 25];
+            let mut rules_buf = [RULE_UNDEFINED; RULES_PER_KEY];
             for (i, rule) in rules.into_iter().enumerate() {
                 if i >= 25 {
                     break;

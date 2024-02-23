@@ -23,5 +23,14 @@
             path: [{starts_with: "/usr/sbin"}]
         },
         action: 'allow'
-    }
+    },
+    {
+        class: 'file',
+        event: 'exec',
+        rules: {
+            path: [{not: {starts_with: "/usr/bin"}}]
+        },
+        action: 'allow'
+    },
+
 ]}

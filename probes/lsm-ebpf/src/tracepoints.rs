@@ -12,9 +12,9 @@ use crate::vmlinux::{file, linux_binprm, path as lnx_path, socket, task_struct};
 use aya_bpf::bindings::path;
 
 use bpfshield_common::{
-    rules::BSRuleClass, rules::BSRuleCommand, rules::BSRuleTarget, rules::BShieldOp,
-    rules::BShieldRule, rules::BShieldRulesKey, rules::BShieldVarType, BShieldAction, BShieldEvent,
-    BShieldEventClass, BShieldEventType,
+    rules::BShieldOp, rules::BShieldRule, rules::BShieldRuleClass, rules::BShieldRuleCommand,
+    rules::BShieldRuleTarget, rules::BShieldRulesKey, rules::BShieldVarType, BShieldAction,
+    BShieldEvent, BShieldEventClass, BShieldEventType, RULES_PER_KEY,
 };
 
 #[map]
@@ -24,14 +24,14 @@ static mut LOCAL_BUFFER_LSM: PerCpuArray<BShieldEvent> = PerCpuArray::with_max_e
 pub static mut LSM_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
 
 #[map]
-pub(crate) static mut LSM_RULES: HashMap<BShieldRulesKey, [BShieldRule; 25]> =
+pub(crate) static mut LSM_RULES: HashMap<BShieldRulesKey, [BShieldRule; RULES_PER_KEY]> =
     HashMap::with_max_entries(100, 0);
 
 #[map]
 pub(crate) static mut LSM_RULE_OPS: Array<BShieldOp> = Array::with_max_entries(1000, 0);
 
 struct LsmRuleVar<'a> {
-    target: BSRuleTarget,
+    target: BShieldRuleTarget,
     int: i64,
     sbuf: &'a [u8],
 }
@@ -47,7 +47,7 @@ fn starts_with(stack: &[u8], needle: &[u8; 25]) -> bool {
 }
 
 fn check_rule_op(
-    target: BSRuleTarget,
+    target: BShieldRuleTarget,
     var_type: &BShieldVarType,
     op: &BShieldOp,
     int: i64,
@@ -59,15 +59,15 @@ fn check_rule_op(
 
     if matches!(*var_type, BShieldVarType::Int) {
         match op.command {
-            BSRuleCommand::Eq => int == op.var.int,
-            BSRuleCommand::Neq => int != op.var.int,
+            BShieldRuleCommand::Eq => int == op.var.int,
+            BShieldRuleCommand::Neq => int != op.var.int,
             _ => false,
         }
     } else if matches!(*var_type, BShieldVarType::String) {
         match op.command {
-            BSRuleCommand::Eq => buf == op.var.sbuf,
-            BSRuleCommand::Neq => buf != op.var.sbuf,
-            BSRuleCommand::StartsWith => starts_with(buf, &op.var.sbuf),
+            BShieldRuleCommand::Eq => buf == op.var.sbuf,
+            BShieldRuleCommand::Neq => buf != op.var.sbuf,
+            BShieldRuleCommand::StartsWith => starts_with(buf, &op.var.sbuf),
             _ => false,
         }
     } else {
@@ -78,7 +78,7 @@ fn check_rule_op(
 fn process_lsm_rules(ctx: &LsmContext, key: BShieldRulesKey, var: LsmRuleVar) -> Result<bool, i32> {
     if let Some(rules) = unsafe { LSM_RULES.get(&key) } {
         for rule in rules {
-            if matches!(rule.class, BSRuleClass::Undefined) {
+            if matches!(rule.class, BShieldRuleClass::Undefined) {
                 break;
             }
 
@@ -90,7 +90,10 @@ fn process_lsm_rules(ctx: &LsmContext, key: BShieldRulesKey, var: LsmRuleVar) ->
                     break;
                 }
                 let op = unsafe { LSM_RULE_OPS.get(idx as u32).ok_or(0i32)? };
-                let result = check_rule_op(var.target, &op.var.var_type, op, var.int, var.sbuf);
+                let mut result = check_rule_op(var.target, &op.var.var_type, op, var.int, var.sbuf);
+                if op.negate {
+                    result = !result;
+                }
                 if !result {
                     matched = false;
                     break;
@@ -186,12 +189,12 @@ fn process_lsm_exec(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> 
     };
 
     let key = BShieldRulesKey {
-        class: BSRuleClass::File as i32,
+        class: BShieldRuleClass::File as i32,
         event_type: BShieldEventType::Exec as i32,
     };
 
     let var = LsmRuleVar {
-        target: BSRuleTarget::Path,
+        target: BShieldRuleTarget::Path,
         int: 0,
         sbuf: &be.path,
     };
@@ -216,11 +219,11 @@ fn process_lsm_socket(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32
     be.port = (port_pair >> 16) as u16 & 0xffff;
 
     let key = BShieldRulesKey {
-        class: BSRuleClass::Socket as i32,
+        class: BShieldRuleClass::Socket as i32,
         event_type: BShieldEventType::Listen as i32,
     };
     let var = LsmRuleVar {
-        target: BSRuleTarget::Port,
+        target: BShieldRuleTarget::Port,
         int: be.port as i64,
         sbuf: &[0; 1],
     };

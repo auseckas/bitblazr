@@ -2,8 +2,6 @@ use crate::probes::Probe;
 use crate::tracker::BSProcessTracker;
 use aya::Bpf;
 use aya_log::BpfLogger;
-use bpfshield_common::rules::{BSRuleClass, BShieldRule};
-use std::collections::HashMap;
 use std::vec::Vec;
 
 pub struct EbpfLoader {

@@ -1,4 +1,4 @@
-use crate::rules::BSRuleVar;
+use crate::rules::BShieldRuleVar;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -20,7 +20,7 @@ pub enum BShieldEventType {
     Listen = 5,
 }
 
-impl BSRuleVar for BShieldEventType {
+impl BShieldRuleVar for BShieldEventType {
     fn from_str(s: &mut str) -> Self {
         s.make_ascii_lowercase();
         match s.trim() {
@@ -46,7 +46,7 @@ pub enum BShieldAction {
     Ignore = 2,
 }
 
-impl BSRuleVar for BShieldAction {
+impl BShieldRuleVar for BShieldAction {
     fn from_str(s: &mut str) -> Self {
         s.make_ascii_lowercase();
         match s.trim() {

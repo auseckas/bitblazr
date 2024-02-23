@@ -13,7 +13,7 @@ pub(crate) fn load_config() -> Result<(), anyhow::Error> {
         config_dir.push('/');
     }
 
-    let mut config = Config::builder()
+    let config = Config::builder()
         .add_source(File::new(
             &format!("{}default.json5", config_dir),
             FileFormat::Json5,

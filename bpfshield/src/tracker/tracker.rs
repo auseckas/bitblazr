@@ -1,11 +1,7 @@
-use std::collections::BTreeMap;
-
-use crate::utils::debug_event;
 use aya::maps::perf::PerfBufferError;
 use bpfshield_common::{
     models::{BShieldAction, BShieldEvent, BShieldEventClass},
-    utils::{self, str_from_buf_nul},
-    BShieldEventType, ARGV_COUNT,
+    utils, BShieldEventType, ARGV_COUNT,
 };
 use chrono::{DateTime, Utc};
 use crossbeam_channel;
