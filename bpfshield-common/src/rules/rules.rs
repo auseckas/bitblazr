@@ -12,6 +12,7 @@ pub trait BSRuleVar {
 pub enum BSRuleTarget {
     Undefined = -1,
     Port = 0,
+    Path = 1,
 }
 
 impl BSRuleVar for BSRuleTarget {
@@ -19,6 +20,7 @@ impl BSRuleVar for BSRuleTarget {
         s.make_ascii_lowercase();
         match s.trim() {
             "port" => BSRuleTarget::Port,
+            "path" => BSRuleTarget::Path,
             _ => BSRuleTarget::Undefined,
         }
     }
@@ -60,13 +62,16 @@ impl BSRuleVar for BSRuleCommand {
 pub enum BSRuleClass {
     Undefined = -1,
     Socket = 0,
+    File = 1,
 }
 
 impl BSRuleClass {
     pub fn is_supported_target(&self, t: &BSRuleTarget) -> bool {
         let socket_targets = &[BSRuleTarget::Port];
+        let file_targets = &[BSRuleTarget::Path];
         match self {
             BSRuleClass::Socket => socket_targets.iter().find(|target| *target == t).is_some(),
+            BSRuleClass::File => file_targets.iter().find(|target| *target == t).is_some(),
             _ => false,
         }
     }
@@ -77,6 +82,7 @@ impl BSRuleVar for BSRuleClass {
         s.make_ascii_lowercase();
         match s.trim() {
             "socket" => BSRuleClass::Socket,
+            "file" => BSRuleClass::File,
             _ => BSRuleClass::Undefined,
         }
     }
@@ -91,6 +97,15 @@ impl BSRuleVar for BSRuleClass {
 pub enum BShieldVarType {
     Undefined = -1,
     Int = 0,
+    String = 1,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct BShieldVar {
+    pub var_type: BShieldVarType,
+    pub int: i64,
+    pub sbuf: [u8; 25],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -98,9 +113,7 @@ pub enum BShieldVarType {
 pub struct BShieldOp {
     pub target: BSRuleTarget,
     pub command: BSRuleCommand,
-    pub offset: u32,
-    pub len: u32,
-    pub var_type: BShieldVarType,
+    pub var: BShieldVar,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -119,17 +132,12 @@ pub struct BShieldRulesKey {
     pub event_type: i32,
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct BShieldRules {
-    pub rules: [u32; 100], // positions in Rule array
-}
-
 #[cfg(feature = "user")]
 mod maps {
-    use crate::rules::{BSRuleClass, BShieldOp, BShieldRule, BShieldRulesKey};
+    use crate::rules::{BShieldOp, BShieldRule, BShieldRulesKey, BShieldVar};
     use aya::Pod;
     unsafe impl Pod for BShieldRule {}
     unsafe impl Pod for BShieldRulesKey {}
     unsafe impl Pod for BShieldOp {}
+    unsafe impl Pod for BShieldVar {}
 }

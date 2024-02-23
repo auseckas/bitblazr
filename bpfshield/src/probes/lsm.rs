@@ -7,7 +7,8 @@ use aya::util::online_cpus;
 use aya::{Bpf, Btf};
 use bpfshield_common::models::BShieldEvent;
 use bpfshield_common::rules::{
-    BSRuleClass, BSRuleCommand, BSRuleTarget, BShieldOp, BShieldRule, BShieldRules, BShieldRulesKey,
+    BSRuleClass, BSRuleCommand, BSRuleTarget, BShieldOp, BShieldRule, BShieldRules,
+    BShieldRulesKey, BShieldVar,
 };
 use bpfshield_common::{BShieldAction, BShieldEventType};
 use bytes::BytesMut;
@@ -88,7 +89,6 @@ impl LsmTracepoints {
                 rules_buf[i] = rule;
             }
 
-            println!("Rules size: {}", std::mem::size_of_val(&rules_buf));
             map_rules.insert(key, rules_buf, 0)?;
         }
 
@@ -96,9 +96,6 @@ impl LsmTracepoints {
             Array::try_from(bpf.map_mut("LSM_RULE_OPS").unwrap()).unwrap();
 
         for (i, op) in shield_ops.into_iter().enumerate() {
-            if i >= 25 {
-                break;
-            }
             array_rule_ops.set(i as u32, op, 0)?;
         }
 

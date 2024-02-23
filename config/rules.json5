@@ -7,5 +7,21 @@
             port: [{neq: 80}, {neq: 443 }]
         },
         action: 'block'
+    },
+    {
+        class: 'file',
+        event: 'exec',
+        rules: {
+            path: [{starts_with: "/usr/bin"}]
+        },
+        action: 'allow'
+    },
+    {
+        class: 'file',
+        event: 'exec',
+        rules: {
+            path: [{starts_with: "/usr/sbin"}]
+        },
+        action: 'allow'
     }
 ]}

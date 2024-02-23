@@ -1,5 +1,7 @@
 use crate::BSError;
-use bpfshield_common::{rules::*, BShieldAction, BShieldEventClass, BShieldEventType};
+use bpfshield_common::{
+    rules::*, utils::hash_nul_str, BShieldAction, BShieldEventClass, BShieldEventType,
+};
 use config::{Config, File, FileFormat};
 use log::warn;
 use serde_json::{Map, Value};
@@ -29,12 +31,11 @@ fn get_field<T: BSRuleVar>(src: &mut Value, f: &str) -> Result<T, anyhow::Error>
     Ok(var)
 }
 
-fn value_to_buf(target: &BSRuleTarget, src: &mut Value) -> Result<[u8; 25], anyhow::Error> {
-    let mut buf: [u8; 25] = [0; 25];
-    match *target {
+fn value_to_var(target: &BSRuleTarget, src: &mut Value) -> Result<BShieldVar, anyhow::Error> {
+    let var = match *target {
         BSRuleTarget::Port => {
             let port = match src.as_u64() {
-                Some(p) => p as u16,
+                Some(p) => p as i64,
                 None => {
                     return Err(BSError::InvalidAttributeType {
                         attribute: "port",
@@ -43,7 +44,44 @@ fn value_to_buf(target: &BSRuleTarget, src: &mut Value) -> Result<[u8; 25], anyh
                     .into());
                 }
             };
-            buf[0..2].clone_from_slice(&port.to_be_bytes());
+
+            BShieldVar {
+                var_type: BShieldVarType::Int,
+                int: port,
+                sbuf: [0; 25],
+            }
+        }
+        BSRuleTarget::Path => {
+            let path = match src.as_str() {
+                Some(s) => s,
+                None => {
+                    return Err(BSError::InvalidAttributeType {
+                        attribute: "path",
+                        value: format!("{:?}", src),
+                    }
+                    .into());
+                }
+            };
+            if path.len() > 25 {
+                return Err(BSError::InvalidAttribute {
+                    attribute: "path",
+                    value: format!(
+                        "Path string used in rules should not exceed 25 chars. Path: {:?}",
+                        path
+                    ),
+                }
+                .into());
+            }
+            let mut sbuf = [0; 25];
+            for (i, ch) in path.as_bytes().iter().enumerate() {
+                sbuf[i] = *ch;
+            }
+
+            BShieldVar {
+                var_type: BShieldVarType::String,
+                int: 0,
+                sbuf: sbuf,
+            }
         }
         _ => {
             return Err(BSError::InvalidAttribute {
@@ -52,37 +90,10 @@ fn value_to_buf(target: &BSRuleTarget, src: &mut Value) -> Result<[u8; 25], anyh
             }
             .into());
         }
-    }
+    };
 
-    Ok(buf)
+    Ok(var)
 }
-
-// fn parse_cond_array(
-//     target: &BSRuleTarget,
-//     cs: &mut Value,
-// ) -> Result<Vec<BShieldOp>, anyhow::Error> {
-//     let mut ops = Vec::new();
-//     for obj in cs.as_array_mut().unwrap_or(&mut Vec::new()) {
-//         for (c, v) in obj.as_object_mut().unwrap_or(&mut Map::new()) {
-//             let comm = BSRuleCommand::from_str(c.to_string().as_mut_str());
-//             if comm.is_undefined() {
-//                 return Err(BSError::InvalidAttribute {
-//                     attribute: "command",
-//                     value: c.to_string(),
-//                 }
-//                 .into());
-//             }
-//             let val = value_to_buf(target, v)?;
-//             let op = BShieldOp {
-//                 command: comm,
-//                 buf: val,
-//             };
-//             ops.push(op);
-//         }
-//     }
-
-//     Ok(ops)
-// }
 
 fn parse_ops(
     shield_ops: &mut Vec<BShieldOp>,
@@ -101,12 +112,12 @@ fn parse_ops(
                 }
                 .into());
             }
+            let var = value_to_var(target, v)?;
+
             let op = BShieldOp {
                 target: *target,
                 command: comm,
-                offset: 0,
-                len: 0,
-                var_type: BShieldVarType::Undefined,
+                var: var,
             };
             shield_ops.push(op);
             let idx = shield_ops.len() - 1;
@@ -184,6 +195,7 @@ pub(crate) fn load_rules(
                 ops: rule_ops_idx,
                 action: action,
             };
+
             let entry = shield_rules.entry(key).or_insert(Vec::new());
             entry.push(shield_rule);
         }
