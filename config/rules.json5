@@ -38,7 +38,7 @@
         rules: {
             path: [{starts_with: "/etc/passwd"}]
         },
-        action: 'block'
+        action: 'allow'
     },
     {
         class: 'file',

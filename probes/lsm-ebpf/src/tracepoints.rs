@@ -92,13 +92,29 @@ fn check_rule_op(op: &BShieldOp, var: &LsmRuleVar) -> bool {
     }
 }
 
-fn process_lsm_rules(ctx: &LsmContext, key: BShieldRulesKey, var: LsmRuleVar) -> Result<bool, i32> {
+struct RuleResult {
+    hits: [u16; 5],
+    action: BShieldAction,
+}
+
+fn process_lsm_rules(
+    ctx: &LsmContext,
+    key: BShieldRulesKey,
+    var: LsmRuleVar,
+) -> Result<RuleResult, i32> {
+    let mut rule_hits = RuleResult {
+        hits: [0; 5],
+        action: BShieldAction::Allow,
+    };
     if let Some(rules) = unsafe { LSM_RULES.get(&key) } {
         for rule in rules {
             if matches!(rule.class, BShieldRuleClass::Undefined) {
                 break;
             }
 
+            if rule.ops[0] == -1 {
+                continue;
+            }
             // Starting with "true" for boolean and functionality on rule ops
             let mut matched = true;
 
@@ -116,12 +132,21 @@ fn process_lsm_rules(ctx: &LsmContext, key: BShieldRulesKey, var: LsmRuleVar) ->
                     break;
                 }
             }
-            if matched && matches!(rule.action, BShieldAction::Block) {
-                return Ok(true);
+            if matched {
+                for hit in rule_hits.hits.iter_mut() {
+                    if *hit == 0 {
+                        *hit = rule.id;
+                        break;
+                    }
+                }
+                if matches!(rule.action, BShieldAction::Block) {
+                    rule_hits.action = BShieldAction::Block;
+                    break;
+                }
             }
         }
     }
-    Ok(false)
+    Ok(rule_hits)
 }
 
 #[lsm(hook = "file_open")]
@@ -208,11 +233,16 @@ fn process_lsm_file(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> 
 
     let result = process_lsm_rules(&ctx, key, var)?;
 
+    be.rule_hits = result.hits;
+    if matches!(result.action, BShieldAction::Block) {
+        be.action = BShieldAction::Block;
+    }
+
     unsafe {
         // LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
-    if result {
+    if matches!(result.action, BShieldAction::Block) {
         Ok(-1)
     } else {
         Ok(0)
@@ -246,12 +276,16 @@ fn process_lsm_exec(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> 
     };
 
     let result = process_lsm_rules(&ctx, key, var)?;
+    be.rule_hits = result.hits;
+    if matches!(result.action, BShieldAction::Block) {
+        be.action = BShieldAction::Block;
+    }
 
     unsafe {
         LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
-    if result {
+    if matches!(result.action, BShieldAction::Block) {
         Ok(-1)
     } else {
         Ok(0)
@@ -275,11 +309,15 @@ fn process_lsm_socket(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32
     };
 
     let result = process_lsm_rules(&ctx, key, var)?;
+    be.rule_hits = result.hits;
+    if matches!(result.action, BShieldAction::Block) {
+        be.action = BShieldAction::Block;
+    }
 
     unsafe {
         LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
-    if result {
+    if matches!(result.action, BShieldAction::Block) {
         Ok(-1)
     } else {
         Ok(0)

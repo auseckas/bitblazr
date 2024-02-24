@@ -123,6 +123,7 @@ pub struct BShieldOp {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct BShieldRule {
+    pub id: u16,
     pub class: BShieldRuleClass,
     pub event: BShieldEventType,
     pub ops: [i32; OPS_PER_RULE], // positions in Rule ops array

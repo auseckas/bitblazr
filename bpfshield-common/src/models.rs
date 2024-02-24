@@ -73,6 +73,7 @@ pub struct BShieldEvent {
     pub action: BShieldAction,
     pub protocol: u16,
     pub port: u16,
+    pub rule_hits: [u16; 5],
     pub p_path: [u8; 255],
     pub path: [u8; 255],
     pub path_len: u16,

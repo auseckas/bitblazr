@@ -27,6 +27,7 @@ pub struct BSProcess {
     pub path: String,
     pub proto_port: Vec<BSProtoPort>,
     pub action: BShieldAction,
+    pub rule_hits: Vec<u16>,
     pub children: Vec<u32>, // [pid,...]
     pub argv: Vec<String>,
 }
@@ -158,6 +159,17 @@ impl BSProcessTracker {
                                             }
                                             _ => (),
                                         };
+                                        for id in event.rule_hits.iter() {
+                                            if *id != 0 && !e.rule_hits.contains(id) {
+                                                e.rule_hits.push(*id);
+                                            }
+                                        }
+
+                                        if matches!(event.action, BShieldAction::Block)
+                                            && matches!(e.action, BShieldAction::Allow)
+                                        {
+                                            e.action = event.action;
+                                        }
                                         arc_e
                                     }
                                     None => {
@@ -176,6 +188,11 @@ impl BSProcessTracker {
                                                 .to_string(),
                                             proto_port: Vec::new(),
                                             action: event.action,
+                                            rule_hits: event
+                                                .rule_hits
+                                                .into_iter()
+                                                .filter(|h| *h != 0)
+                                                .collect(),
                                             children: Vec::new(),
                                             argv: BSProcessTracker::process_argv(&event),
                                         };
@@ -206,7 +223,9 @@ impl BSProcessTracker {
                                 // if event.path.starts_with("/usr/bin".as_bytes()) {
                                 //     println!("Entry: {:#?}", entry);
                                 // }
-                                if matches!(event.event_type, BShieldEventType::Listen) {
+                                if matches!(event.event_type, BShieldEventType::Listen)
+                                    || matches!(event.event_type, BShieldEventType::Exec)
+                                {
                                     println!("Entry: {:#?}", entry);
                                 }
                                 std::future::ready(entry)

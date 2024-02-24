@@ -66,6 +66,7 @@ impl LsmTracepoints {
 
     fn load_rules(&self, bpf: &mut Bpf) -> Result<(), anyhow::Error> {
         const RULE_UNDEFINED: BShieldRule = BShieldRule {
+            id: 0,
             class: BShieldRuleClass::Undefined,
             event: BShieldEventType::Undefined,
             ops: [-1; OPS_PER_RULE],

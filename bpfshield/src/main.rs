@@ -39,9 +39,7 @@ async fn main() -> Result<(), anyhow::Error> {
     #[cfg(debug_assertions)]
     let mut bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/tracepoints")?;
     #[cfg(not(debug_assertions))]
-    let mut bpf = Bpf::load(include_bytes_aligned!(
-        "../../../probes/target/bpfel-unknown-none/release/tracepoints"
-    ))?;
+    let mut bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/release/tracepoints")?;
 
     bpf_loader.attach(
         &mut bpf,
@@ -54,9 +52,7 @@ async fn main() -> Result<(), anyhow::Error> {
     #[cfg(debug_assertions)]
     let mut lsm_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/lsm")?;
     #[cfg(not(debug_assertions))]
-    let mut lsm_bpf = Bpf::load(include_bytes_aligned!(
-        "../../../probes/target/bpfel-unknown-none/release/lsm"
-    ))?;
+    let mut lsm_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/release/lsm")?;
 
     bpf_loader.attach(
         &mut lsm_bpf,

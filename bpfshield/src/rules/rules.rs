@@ -163,7 +163,12 @@ pub(crate) fn load_rules(
     let mut rules: HashMap<String, Value> = rule_config.try_deserialize().unwrap();
 
     if let Some(defs) = rules.get_mut("definitions") {
-        for mut rule in defs.as_array_mut().unwrap_or(&mut Vec::new()) {
+        for (rule_id, mut rule) in defs
+            .as_array_mut()
+            .unwrap_or(&mut Vec::new())
+            .into_iter()
+            .enumerate()
+        {
             let mut shield_ops_idx: Vec<i32> = Vec::new();
 
             let class: BShieldRuleClass = get_field(&mut rule, "class")?;
@@ -206,6 +211,7 @@ pub(crate) fn load_rules(
             }
 
             let shield_rule = BShieldRule {
+                id: (rule_id as u16) + 1,
                 class: class,
                 event: event,
                 ops: rule_ops_idx,
