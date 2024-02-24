@@ -28,7 +28,11 @@ fn get_field<T: BShieldRuleVar>(src: &mut Value, f: &str) -> Result<T, anyhow::E
     Ok(var)
 }
 
-fn value_to_var(target: &BShieldRuleTarget, src: &mut Value) -> Result<BShieldVar, anyhow::Error> {
+fn value_to_var(
+    comm: &BShieldRuleCommand,
+    target: &BShieldRuleTarget,
+    src: &mut Value,
+) -> Result<BShieldVar, anyhow::Error> {
     let var = match *target {
         BShieldRuleTarget::Port => {
             let port = match src.as_u64() {
@@ -46,6 +50,7 @@ fn value_to_var(target: &BShieldRuleTarget, src: &mut Value) -> Result<BShieldVa
                 var_type: BShieldVarType::Int,
                 int: port,
                 sbuf: [0; 25],
+                sbuf_len: 0,
             }
         }
         BShieldRuleTarget::Path => {
@@ -69,7 +74,9 @@ fn value_to_var(target: &BShieldRuleTarget, src: &mut Value) -> Result<BShieldVa
                 }
                 .into());
             }
+
             let mut sbuf = [0; 25];
+            let sbuf_len = path.len() as u16;
             for (i, ch) in path.as_bytes().iter().enumerate() {
                 sbuf[i] = *ch;
             }
@@ -78,6 +85,7 @@ fn value_to_var(target: &BShieldRuleTarget, src: &mut Value) -> Result<BShieldVa
                 var_type: BShieldVarType::String,
                 int: 0,
                 sbuf: sbuf,
+                sbuf_len: sbuf_len,
             }
         }
         _ => {
@@ -118,7 +126,7 @@ fn parse_ops(
                 continue;
             }
 
-            let var = value_to_var(target, v)?;
+            let var = value_to_var(&comm, target, v)?;
 
             let op = BShieldOp {
                 target: *target,

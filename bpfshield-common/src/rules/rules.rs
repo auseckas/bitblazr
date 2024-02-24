@@ -1,4 +1,4 @@
-use crate::{BShieldAction, BShieldEventType};
+use crate::{BShieldAction, BShieldEventType, OPS_PER_RULE};
 
 pub trait BShieldRuleVar {
     fn from_str(_: &mut str) -> Self;
@@ -108,6 +108,7 @@ pub struct BShieldVar {
     pub var_type: BShieldVarType,
     pub int: i64,
     pub sbuf: [u8; 25],
+    pub sbuf_len: u16,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -124,7 +125,7 @@ pub struct BShieldOp {
 pub struct BShieldRule {
     pub class: BShieldRuleClass,
     pub event: BShieldEventType,
-    pub ops: [i32; 15], // positions in Rule ops array
+    pub ops: [i32; OPS_PER_RULE], // positions in Rule ops array
     pub action: BShieldAction,
 }
 

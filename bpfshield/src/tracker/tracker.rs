@@ -143,16 +143,10 @@ impl BSProcessTracker {
                                                 if matches!(e.ppid, None) {
                                                     e.ppid = event.ppid;
                                                 }
-                                                if matches!(
-                                                    event.event_type,
-                                                    BShieldEventType::Bprm
-                                                ) {
-                                                    e.action = event.action;
-                                                }
                                             }
                                         }
                                         match event.event_type {
-                                            BShieldEventType::Socket => {
+                                            BShieldEventType::Listen => {
                                                 if event.protocol > 0 {
                                                     e.proto_port.push({
                                                         BSProtoPort {
@@ -192,7 +186,7 @@ impl BSProcessTracker {
                                             }
                                         }
                                         match event.event_type {
-                                            BShieldEventType::Socket => {
+                                            BShieldEventType::Listen => {
                                                 if event.protocol > 0 {
                                                     e.proto_port.push({
                                                         BSProtoPort {
@@ -212,7 +206,7 @@ impl BSProcessTracker {
                                 // if event.path.starts_with("/usr/bin".as_bytes()) {
                                 //     println!("Entry: {:#?}", entry);
                                 // }
-                                if matches!(event.event_type, BShieldEventType::Socket) {
+                                if matches!(event.event_type, BShieldEventType::Listen) {
                                     println!("Entry: {:#?}", entry);
                                 }
                                 std::future::ready(entry)

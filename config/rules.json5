@@ -32,5 +32,21 @@
         },
         action: 'allow'
     },
+    {
+        class: 'file',
+        event: 'open',
+        rules: {
+            path: [{starts_with: "/etc/passwd"}]
+        },
+        action: 'block'
+    },
+    {
+        class: 'file',
+        event: 'exec',
+        rules: {
+            path: [{ends_with: "sed"}]
+        },
+        action: 'block'
+    },
 
 ]}

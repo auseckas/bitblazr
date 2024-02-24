@@ -15,9 +15,7 @@ pub enum BShieldEventType {
     Exec = 0,
     Exit = 1,
     Open = 2,
-    Bprm = 3,
-    Socket = 4,
-    Listen = 5,
+    Listen = 3,
 }
 
 impl BShieldRuleVar for BShieldEventType {
@@ -77,6 +75,7 @@ pub struct BShieldEvent {
     pub port: u16,
     pub p_path: [u8; 255],
     pub path: [u8; 255],
+    pub path_len: u16,
     pub argv_count: u8,
     pub argv: [[u8; 200]; crate::ARGV_COUNT],
 }
