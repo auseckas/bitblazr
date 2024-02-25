@@ -91,3 +91,12 @@ impl BShieldEvent {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+#[repr(C)]
+enum ProcessLabels {
+    Shell = 0,
+    Container = 1,
+    Webserver = 2,
+    Database = 3,
+}

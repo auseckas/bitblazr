@@ -15,12 +15,14 @@ mod rules;
 mod tracker;
 mod utils;
 
+use tracker::labels::ContextTracker;
+
 use errors::BSError;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     env_logger::init();
-    config::load_config()?;
+    let config = config::load_config()?;
 
     // Bump the memlock rlimit. This is needed for older kernels that don't use the
     // new memcg based accounting, see https://lwn.net/Articles/837122/
@@ -32,6 +34,8 @@ async fn main() -> Result<(), anyhow::Error> {
     if ret != 0 {
         debug!("remove limit on locked memory failed, ret is: {}", ret);
     }
+
+    let bpf_context = ContextTracker::new(&config);
 
     let event_loop = tracker::BSProcessTracker::new()?;
     let bpf_loader = EbpfLoader::new(event_loop);

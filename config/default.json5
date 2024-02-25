@@ -1,4 +1,19 @@
 {
-    // Some sort of list
-    "list": ["test", "test1"]
+    process_labels: {
+        container: [
+            { ends_with: "containerd-shim-runc-v2"}
+        ],
+        shell: [
+            { ends_with: "bash" },
+            { ends_with: "sh" },
+            { ends_with: "csh" },
+            { ends_with: "ksh" }
+        ],
+        webserver: [
+            { starts_with: "nginx" },
+        ],
+        database: [
+            { contains: "mysqld" },
+        ]
+    }
 }
