@@ -1,4 +1,5 @@
 use super::Probe;
+use crate::ContextTracker;
 use aya::maps::perf::{AsyncPerfEventArray, PerfBufferError};
 use aya::programs::TracePoint;
 use aya::util::online_cpus;
@@ -7,6 +8,7 @@ use bpfshield_common::models::BShieldEvent;
 use bytes::BytesMut;
 use log::warn;
 use std::result::Result;
+use std::sync::Arc;
 
 pub struct Tracepoints {}
 
@@ -56,6 +58,7 @@ impl Probe for Tracepoints {
         &self,
         bpf: &mut Bpf,
         snd: crossbeam_channel::Sender<BShieldEvent>,
+        _cxt_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
         self.run(bpf, snd)?;
 

@@ -1,3 +1,4 @@
+use crate::ContextTracker;
 use aya::maps::perf::PerfBufferError;
 use bpfshield_common::{
     models::{BShieldAction, BShieldEvent, BShieldEventClass},
@@ -29,6 +30,7 @@ pub struct BSProcess {
     pub action: BShieldAction,
     pub rule_hits: Vec<u16>,
     pub children: Vec<u32>, // [pid,...]
+    pub context: Vec<i64>,
     pub argv: Vec<String>,
 }
 
@@ -37,11 +39,11 @@ pub struct BSProcessTracker {
 }
 
 impl BSProcessTracker {
-    pub fn new() -> Result<BSProcessTracker, anyhow::Error> {
+    pub fn new(ctx_tracker: Arc<ContextTracker>) -> Result<BSProcessTracker, anyhow::Error> {
         let (snd, recv) = crossbeam_channel::bounded::<BShieldEvent>(100_000);
 
         let bes = BSProcessTracker { snd };
-        bes.run(recv)?;
+        bes.run(recv, ctx_tracker.clone())?;
         Ok(bes)
     }
 
@@ -70,6 +72,7 @@ impl BSProcessTracker {
     pub fn run(
         &self,
         recv: crossbeam_channel::Receiver<BShieldEvent>,
+        ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
         let tracker: Cache<u32, Arc<BSProcess>> = Cache::new(100_000);
         let thread_tracker = tracker.clone();
@@ -170,9 +173,28 @@ impl BSProcessTracker {
                                         {
                                             e.action = event.action;
                                         }
+
+                                        if event.labels[0] != 0 {
+                                            for l in event.labels {
+                                                if l == 0 {
+                                                    break;
+                                                }
+                                                if !e.context.contains(&l) {
+                                                    e.context.push(l);
+                                                }
+                                            }
+                                        }
+
                                         arc_e
                                     }
                                     None => {
+                                        let path = utils::str_from_buf_nul(&event.path)
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let p_path = utils::str_from_buf_nul(&event.p_path)
+                                            .unwrap_or("")
+                                            .to_string();
+
                                         let mut e = BSProcess {
                                             created: Utc::now(),
                                             tgid: event.tgid,
@@ -180,12 +202,8 @@ impl BSProcessTracker {
                                             ppid: event.ppid,
                                             uid: event.uid,
                                             gid: event.gid,
-                                            path: utils::str_from_buf_nul(&event.path)
-                                                .unwrap_or("")
-                                                .to_string(),
-                                            p_path: utils::str_from_buf_nul(&event.p_path)
-                                                .unwrap_or("")
-                                                .to_string(),
+                                            path: path,
+                                            p_path: p_path,
                                             proto_port: Vec::new(),
                                             action: event.action,
                                             rule_hits: event
@@ -194,6 +212,7 @@ impl BSProcessTracker {
                                                 .filter(|h| *h != 0)
                                                 .collect(),
                                             children: Vec::new(),
+                                            context: Vec::new(),
                                             argv: BSProcessTracker::process_argv(&event),
                                         };
                                         // If first argument is the command, remove it
@@ -215,6 +234,17 @@ impl BSProcessTracker {
                                             }
                                             _ => (),
                                         };
+
+                                        if event.labels[0] != 0 {
+                                            for l in event.labels {
+                                                if l == 0 {
+                                                    break;
+                                                }
+                                                if !e.context.contains(&l) {
+                                                    e.context.push(l);
+                                                }
+                                            }
+                                        }
 
                                         Arc::new(e)
                                     }

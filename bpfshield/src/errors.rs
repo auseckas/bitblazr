@@ -8,4 +8,6 @@ pub enum BSError<'a> {
     InvalidAttribute { attribute: &'a str, value: String },
     #[error("Missing attribute: {0}")]
     MissingAttribute(String),
+    #[error("Deserialize error: {0}")]
+    Deserialize(String),
 }

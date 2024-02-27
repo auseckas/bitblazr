@@ -13,6 +13,7 @@ pub enum BShieldRuleTarget {
     Undefined = -1,
     Port = 0,
     Path = 1,
+    Context = 2,
 }
 
 impl BShieldRuleVar for BShieldRuleTarget {
@@ -21,6 +22,7 @@ impl BShieldRuleVar for BShieldRuleTarget {
         match s.trim() {
             "port" => BShieldRuleTarget::Port,
             "path" => BShieldRuleTarget::Path,
+            "context" => BShieldRuleTarget::Context,
             _ => BShieldRuleTarget::Undefined,
         }
     }
@@ -69,8 +71,8 @@ pub enum BShieldRuleClass {
 
 impl BShieldRuleClass {
     pub fn is_supported_target(&self, t: &BShieldRuleTarget) -> bool {
-        let socket_targets = &[BShieldRuleTarget::Port];
-        let file_targets = &[BShieldRuleTarget::Path];
+        let socket_targets = &[BShieldRuleTarget::Context, BShieldRuleTarget::Port];
+        let file_targets = &[BShieldRuleTarget::Context, BShieldRuleTarget::Path];
         match self {
             BShieldRuleClass::Socket => socket_targets.iter().find(|target| *target == t).is_some(),
             BShieldRuleClass::File => file_targets.iter().find(|target| *target == t).is_some(),
@@ -126,6 +128,7 @@ pub struct BShieldRule {
     pub id: u16,
     pub class: BShieldRuleClass,
     pub event: BShieldEventType,
+    pub context: [i64; 5],
     pub ops: [i32; OPS_PER_RULE], // positions in Rule ops array
     pub action: BShieldAction,
 }

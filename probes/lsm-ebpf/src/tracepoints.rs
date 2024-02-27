@@ -31,6 +31,9 @@ pub(crate) static mut LSM_RULES: HashMap<BShieldRulesKey, [BShieldRule; RULES_PE
 #[map]
 pub(crate) static mut LSM_RULE_OPS: Array<BShieldOp> = Array::with_max_entries(1000, 0);
 
+#[map]
+pub(crate) static mut LSM_CTX_LABELS: HashMap<u32, [i64; 5]> = HashMap::with_max_entries(10_000, 0);
+
 struct LsmRuleVar<'a> {
     target: BShieldRuleTarget,
     int: i64,
@@ -92,6 +95,10 @@ fn check_rule_op(op: &BShieldOp, var: &LsmRuleVar) -> bool {
     }
 }
 
+fn check_context(op: &BShieldOp, be: &BShieldEvent) -> bool {
+    false
+}
+
 struct RuleResult {
     hits: [u16; 5],
     action: BShieldAction,
@@ -101,15 +108,28 @@ fn process_lsm_rules(
     ctx: &LsmContext,
     key: BShieldRulesKey,
     var: LsmRuleVar,
+    labels: &[i64; 5],
 ) -> Result<RuleResult, i32> {
     let mut rule_hits = RuleResult {
         hits: [0; 5],
         action: BShieldAction::Allow,
     };
+
     if let Some(rules) = unsafe { LSM_RULES.get(&key) } {
         for rule in rules {
             if matches!(rule.class, BShieldRuleClass::Undefined) {
                 break;
+            }
+
+            let mut ctx_match = true;
+            for l in rule.context {
+                if l == 0 {
+                    break;
+                }
+                if !labels.contains(&l) {
+                    ctx_match = false;
+                    break;
+                }
             }
 
             if rule.ops[0] == -1 {
@@ -132,7 +152,7 @@ fn process_lsm_rules(
                     break;
                 }
             }
-            if matched {
+            if matched && ctx_match {
                 for hit in rule_hits.hits.iter_mut() {
                     if *hit == 0 {
                         *hit = rule.id;
@@ -180,8 +200,15 @@ fn process_lsm(ctx: LsmContext, et: BShieldEventType) -> Result<i32, i32> {
     let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
 
     let task: *const task_struct = unsafe { bpf_get_current_task() as *const _ };
-    let parent: *const task_struct = unsafe { bpf_probe_read(&(*task).parent).map_err(|_| -1i32)? };
-    let ppid = unsafe { bpf_probe_read(&(*parent).pid).map_err(|_| -1i32)? };
+    let parent: *const task_struct = unsafe { bpf_probe_read(&(*task).parent).map_err(|_| 0i32)? };
+    let ppid = unsafe { bpf_probe_read(&(*parent).pid).map_err(|_| 0i32)? };
+
+    let mut p_comm = ctx.command().map_err(|_| 0i32)?;
+    unsafe {
+        bpf_probe_read_kernel_str_bytes(p_comm.as_mut_ptr(), &mut be.p_path).map_err(|_| 0i32)?
+    };
+
+    let labels = unsafe { LSM_CTX_LABELS.get(&(ppid as u32)).unwrap_or(&[0; 5]) };
 
     be.class = BShieldEventClass::Lsm;
     be.ppid = Some(ppid as u32);
@@ -196,14 +223,14 @@ fn process_lsm(ctx: LsmContext, et: BShieldEventType) -> Result<i32, i32> {
     be.path_len = 0;
 
     match et {
-        BShieldEventType::Open => process_lsm_file(ctx, be),
-        BShieldEventType::Exec => process_lsm_exec(ctx, be),
-        BShieldEventType::Listen => process_lsm_socket(ctx, be),
+        BShieldEventType::Open => process_lsm_file(ctx, be, labels),
+        BShieldEventType::Exec => process_lsm_exec(ctx, be, labels),
+        BShieldEventType::Listen => process_lsm_socket(ctx, be, labels),
         _ => Ok(0),
     }
 }
 
-fn process_lsm_file(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> {
+fn process_lsm_file(ctx: LsmContext, be: &mut BShieldEvent, labels: &[i64; 5]) -> Result<i32, i32> {
     let f: *const file = unsafe { ctx.arg(0) };
     let p: *const lnx_path = unsafe { &(*f).f_path };
 
@@ -231,7 +258,7 @@ fn process_lsm_file(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> 
         sbuf: sbuf,
     };
 
-    let result = process_lsm_rules(&ctx, key, var)?;
+    let result = process_lsm_rules(&ctx, key, var, labels)?;
 
     be.rule_hits = result.hits;
     if matches!(result.action, BShieldAction::Block) {
@@ -249,7 +276,7 @@ fn process_lsm_file(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> 
     }
 }
 
-fn process_lsm_exec(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> {
+fn process_lsm_exec(ctx: LsmContext, be: &mut BShieldEvent, labels: &[i64; 5]) -> Result<i32, i32> {
     let lb: *const linux_binprm = unsafe { ctx.arg(0) };
 
     let path_len = unsafe {
@@ -275,7 +302,7 @@ fn process_lsm_exec(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> 
         sbuf: sbuf,
     };
 
-    let result = process_lsm_rules(&ctx, key, var)?;
+    let result = process_lsm_rules(&ctx, key, var, labels)?;
     be.rule_hits = result.hits;
     if matches!(result.action, BShieldAction::Block) {
         be.action = BShieldAction::Block;
@@ -292,7 +319,11 @@ fn process_lsm_exec(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> 
     }
 }
 
-fn process_lsm_socket(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32> {
+fn process_lsm_socket(
+    ctx: LsmContext,
+    be: &mut BShieldEvent,
+    labels: &[i64; 5],
+) -> Result<i32, i32> {
     let socket: *const socket = unsafe { ctx.arg(0) };
     be.protocol = unsafe { (*(*socket).sk).sk_protocol };
     let port_pair: u32 = unsafe { (*(*socket).sk).__sk_common.__bindgen_anon_3.skc_portpair };
@@ -308,7 +339,7 @@ fn process_lsm_socket(ctx: LsmContext, be: &mut BShieldEvent) -> Result<i32, i32
         sbuf: &[0; 0],
     };
 
-    let result = process_lsm_rules(&ctx, key, var)?;
+    let result = process_lsm_rules(&ctx, key, var, labels)?;
     be.rule_hits = result.hits;
     if matches!(result.action, BShieldAction::Block) {
         be.action = BShieldAction::Block;

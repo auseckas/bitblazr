@@ -6,7 +6,7 @@
         rules: {
             port: [{neq: 80}, {neq: 443 }]
         },
-        action: 'block'
+        action: 'allow'
     },
     {
         class: 'file',
@@ -35,10 +35,11 @@
     {
         class: 'file',
         event: 'open',
+        context: ["container"],
         rules: {
             path: [{starts_with: "/etc/passwd"}]
         },
-        action: 'allow'
+        action: 'block'
     },
     {
         class: 'file',

@@ -39,7 +39,7 @@ struct ContextEntry {
 
 pub struct ContextTracker {
     patterns: HashMap<String, (AhoCorasick, Vec<ContextEntry>)>,
-    labels: HashMap<String, u64>,
+    labels: HashMap<String, i64>,
 }
 
 impl ContextTracker {
@@ -63,13 +63,14 @@ impl ContextTracker {
                 .ascii_case_insensitive(true)
                 .build(match_strs)?;
 
-            labels.insert(label.to_string(), get_hash(label));
+            labels.insert(label.to_string(), get_hash(label) as i64);
             patterns.insert(label.to_string(), (ac, entries));
         }
         Ok(ContextTracker { patterns, labels })
     }
 
-    pub fn check_process_label(&self, p_name: &str) -> Option<Vec<u64>> {
+    pub fn check_process_label(&self, p_name: &str) -> Option<Vec<i64>> {
+        println!("Checking labels for: {}", p_name);
         let mut labels = Vec::new();
         let hay_end = p_name.len();
         for (label, (ac, entries)) in self.patterns.iter() {
@@ -96,6 +97,10 @@ impl ContextTracker {
         } else {
             Some(labels)
         }
+    }
+
+    pub fn get_labels(&self) -> &HashMap<String, i64> {
+        &self.labels
     }
 }
 

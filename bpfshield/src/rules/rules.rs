@@ -31,6 +31,7 @@ fn get_field<T: BShieldRuleVar>(src: &mut Value, f: &str) -> Result<T, anyhow::E
 fn value_to_var(
     comm: &BShieldRuleCommand,
     target: &BShieldRuleTarget,
+    labels: &HashMap<String, i64>,
     src: &mut Value,
 ) -> Result<BShieldVar, anyhow::Error> {
     let var = match *target {
@@ -103,51 +104,73 @@ fn value_to_var(
 fn parse_ops(
     shield_ops: &mut Vec<BShieldOp>,
     target: &BShieldRuleTarget,
+    labels: &HashMap<String, i64>,
     cs: &mut Value,
 ) -> Result<Vec<i32>, anyhow::Error> {
     let mut ops_idx: Vec<i32> = Vec::new();
 
-    for obj in cs.as_array_mut().unwrap_or(&mut Vec::new()) {
-        for (c, v) in obj.as_object_mut().unwrap_or(&mut Map::new()) {
-            let comm = BShieldRuleCommand::from_str(c.trim().to_string().as_mut_str());
-            if comm.is_undefined() {
-                return Err(BSError::InvalidAttribute {
-                    attribute: "command",
-                    value: c.to_string(),
+    match cs {
+        Value::Array(a) => {
+            for obj in a {
+                if !obj.is_object() {
+                    return Err(BSError::InvalidAttributeType {
+                        attribute: "rule_op_value",
+                        value: obj.to_string(),
+                    }
+                    .into());
                 }
-                .into());
-            }
-            if matches!(comm, BShieldRuleCommand::Not) {
-                let ids = parse_ops(shield_ops, target, &mut Value::from(vec![v.clone()]))?;
-                for id in ids {
-                    shield_ops.get_mut(id as usize).map(|op| op.negate = true);
-                    ops_idx.push(id);
+                for (c, v) in obj.as_object_mut().unwrap_or(&mut Map::new()) {
+                    let comm = BShieldRuleCommand::from_str(c.trim().to_string().as_mut_str());
+                    if comm.is_undefined() {
+                        return Err(BSError::InvalidAttribute {
+                            attribute: "command",
+                            value: cs.to_string(),
+                        }
+                        .into());
+                    }
+                    if matches!(comm, BShieldRuleCommand::Not) {
+                        let ids = parse_ops(
+                            shield_ops,
+                            target,
+                            labels,
+                            &mut Value::from(vec![v.clone()]),
+                        )?;
+                        for id in ids {
+                            shield_ops.get_mut(id as usize).map(|op| op.negate = true);
+                            ops_idx.push(id);
+                        }
+                        continue;
+                    }
+
+                    let var = value_to_var(&comm, target, labels, v)?;
+
+                    let op = BShieldOp {
+                        target: *target,
+                        negate: false,
+                        command: comm,
+                        var: var,
+                    };
+                    shield_ops.push(op);
+                    let idx = shield_ops.len() - 1;
+                    ops_idx.push(idx as i32);
                 }
-                continue;
             }
-
-            let var = value_to_var(&comm, target, v)?;
-
-            let op = BShieldOp {
-                target: *target,
-                negate: false,
-                command: comm,
-                var: var,
-            };
-            shield_ops.push(op);
-            let idx = shield_ops.len() - 1;
-            ops_idx.push(idx as i32);
+        }
+        _ => {
+            return Err(BSError::InvalidAttributeType {
+                attribute: "rule_ops",
+                value: cs.to_string(),
+            }
+            .into());
         }
     }
 
     Ok(ops_idx)
 }
 
-pub(crate) fn load_rules(
+pub(crate) fn load_rules_from_config(
+    labels: &HashMap<String, i64>,
 ) -> Result<(HashMap<BShieldRulesKey, Vec<BShieldRule>>, Vec<BShieldOp>), anyhow::Error> {
-    let mut shield_rules: HashMap<BShieldRulesKey, Vec<BShieldRule>> = HashMap::new();
-    let mut shield_ops: Vec<BShieldOp> = Vec::new();
-
     let mut config_dir = env::var("CONFIG_DIR").unwrap_or_else(|_| "config/".into());
     if !config_dir.ends_with('/') {
         config_dir.push('/');
@@ -160,7 +183,18 @@ pub(crate) fn load_rules(
         ))
         .build()?;
 
-    let mut rules: HashMap<String, Value> = rule_config.try_deserialize().unwrap();
+    let rules: HashMap<String, Value> = rule_config
+        .try_deserialize()
+        .map_err(|e| BSError::Deserialize(e.to_string()))?;
+    load_rules(labels, rules)
+}
+
+pub(crate) fn load_rules(
+    labels: &HashMap<String, i64>,
+    mut rules: HashMap<String, Value>,
+) -> Result<(HashMap<BShieldRulesKey, Vec<BShieldRule>>, Vec<BShieldOp>), anyhow::Error> {
+    let mut shield_rules: HashMap<BShieldRulesKey, Vec<BShieldRule>> = HashMap::new();
+    let mut shield_ops: Vec<BShieldOp> = Vec::new();
 
     if let Some(defs) = rules.get_mut("definitions") {
         for (rule_id, mut rule) in defs
@@ -174,15 +208,28 @@ pub(crate) fn load_rules(
             let class: BShieldRuleClass = get_field(&mut rule, "class")?;
             let event: BShieldEventType = get_field(&mut rule, "event")?;
             let action: BShieldAction = get_field(&mut rule, "action")?;
+            let ctx = rule
+                .get("context")
+                .and_then(|ctx| ctx.as_array())
+                .map(|e| {
+                    e.iter()
+                        .filter_map(|v| labels.get(v.as_str().unwrap_or("")).map(|l| *l))
+                })
+                .map(|fm| fm.collect::<Vec<i64>>())
+                .unwrap_or(Vec::new());
+
+            let mut context = [0; 5];
+            for (i, l) in ctx.into_iter().enumerate() {
+                if i >= 5 {
+                    break;
+                }
+                context[i] = l;
+            }
 
             let key = BShieldRulesKey {
                 class: class as i32,
                 event_type: event as i32,
             };
-
-            println!("Rule: {:?}", rule);
-
-            let mut bad_target = false;
 
             for (t, rs) in rule
                 .get_mut("rules")
@@ -192,17 +239,13 @@ pub(crate) fn load_rules(
                 let target: BShieldRuleTarget =
                     BShieldRuleTarget::from_str(t.to_string().as_mut_str());
                 if !class.is_supported_target(&target) {
-                    warn!(
-                        "Unsupported target: {:?}, for class: {:?}. Skipping the rule.",
-                        target, class
-                    );
-                    bad_target = true;
-                    break;
+                    return Err(BSError::InvalidAttribute {
+                        attribute: "target",
+                        value: t.to_string(),
+                    }
+                    .into());
                 }
-                shield_ops_idx.append(&mut parse_ops(&mut shield_ops, &target, rs)?);
-            }
-            if bad_target {
-                continue;
+                shield_ops_idx.append(&mut parse_ops(&mut shield_ops, &target, labels, rs)?);
             }
 
             let mut rule_ops_idx = [-1i32; OPS_PER_RULE];
@@ -214,6 +257,7 @@ pub(crate) fn load_rules(
                 id: (rule_id as u16) + 1,
                 class: class,
                 event: event,
+                context: context,
                 ops: rule_ops_idx,
                 action: action,
             };
@@ -224,4 +268,183 @@ pub(crate) fn load_rules(
     }
 
     Ok((shield_rules, shield_ops))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::load_rules;
+    use crate::utils::get_hash;
+    use bpfshield_common::rules::BShieldRuleTarget;
+    use serde_json::Value;
+
+    #[test]
+    fn check_rules_basic() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+            "definitions": [
+                {
+                    "action": "block",
+                    "class": "socket",
+                    "event": "listen",
+                    "rules": {
+                        "port": [
+                            {
+                                "neq": 80,
+                            },
+                            {
+                                "neq": 443,
+                            }
+                        ]
+                    }
+                }
+
+            ]
+        });
+        // let rules = HashMap::new();
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+        let (shield_rules, _shield_ops) = load_rules(&labels, rules_obj).unwrap();
+        assert_eq!(shield_rules.iter().next().unwrap().1[0].ops[0], 0);
+        assert_eq!(shield_rules.iter().next().unwrap().1[0].ops[1], 1);
+    }
+
+    #[test]
+    fn check_rules_bad_op() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+            "definitions": [
+                {
+                    "action": "block",
+                    "class": "socket",
+                    "event": "listen",
+                    "rules": {
+                        "bad_target": "Bah",
+                        "port": [
+                            {
+                                "neq": 80,
+                            },
+                            {
+                                "neq": 443,
+                            }
+                        ]
+                    }
+                }
+
+            ]
+        });
+        // let rules = HashMap::new();
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+        let result = load_rules(&labels, rules_obj);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert_eq!(
+                e.to_string(),
+                "Invalid attribute: \"target\", value: \"bad_target\""
+            );
+        }
+    }
+
+    #[test]
+    fn check_rules_context() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+            "definitions": [
+                {
+                    "action": "block",
+                    "class": "socket",
+                    "event": "listen",
+                    "rules": {
+                        "context": [{"eq": "container"}],
+                        "port": [
+                            {
+                                "neq": 80,
+                            },
+                            {
+                                "neq": 443,
+                            }
+                        ]
+                    }
+                }
+
+            ]
+        });
+        // let rules = HashMap::new();
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+        let (_shield_rules, shield_ops) = load_rules(&labels, rules_obj).unwrap();
+        let context_pos = shield_ops
+            .iter()
+            .position(|op| matches!(op.target, BShieldRuleTarget::Context));
+        assert!(context_pos.is_some());
+        let op = shield_ops[context_pos.unwrap()];
+        assert_eq!(op.var.int, get_hash("container") as i64);
+    }
+
+    #[test]
+    fn check_bad_rules_context() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+            "definitions": [
+                {
+                    "action": "block",
+                    "class": "socket",
+                    "event": "listen",
+                    "rules": {
+                        "context": ["container"],
+                        "port": [
+                            {
+                                "neq": 80,
+                            },
+                            {
+                                "neq": 443,
+                            }
+                        ]
+                    }
+                }
+
+            ]
+        });
+        // let rules = HashMap::new();
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+        let result = load_rules(&labels, rules_obj);
+        if let Err(e) = result {
+            assert!(e.to_string().contains("Invalid attribute type"));
+        }
+    }
 }

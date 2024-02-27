@@ -6,6 +6,7 @@ use crate::loader::EbpfLoader;
 
 extern crate crossbeam_channel;
 extern crate serde_derive;
+extern crate serde_json;
 
 mod config;
 mod errors;
@@ -17,7 +18,9 @@ mod utils;
 
 use tracker::labels::ContextTracker;
 
+use crate::probes::PsLabels;
 use errors::BSError;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -35,9 +38,9 @@ async fn main() -> Result<(), anyhow::Error> {
         debug!("remove limit on locked memory failed, ret is: {}", ret);
     }
 
-    let bpf_context = ContextTracker::new(&config);
+    let bpf_context = Arc::new(ContextTracker::new(&config)?);
 
-    let event_loop = tracker::BSProcessTracker::new()?;
+    let event_loop = tracker::BSProcessTracker::new(bpf_context.clone())?;
     let bpf_loader = EbpfLoader::new(event_loop);
 
     #[cfg(debug_assertions)]
@@ -47,6 +50,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     bpf_loader.attach(
         &mut bpf,
+        bpf_context.clone(),
         vec![
             Box::new(probes::tracepoints::Tracepoints::new()),
             Box::new(probes::btftracepoints::BtfTracepoints::new()),
@@ -58,10 +62,17 @@ async fn main() -> Result<(), anyhow::Error> {
     #[cfg(not(debug_assertions))]
     let mut lsm_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/release/lsm")?;
 
+    let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
+
     bpf_loader.attach(
         &mut lsm_bpf,
-        vec![Box::new(probes::lsm::LsmTracepoints::new())],
+        bpf_context.clone(),
+        vec![Box::new(probes::lsm::LsmTracepoints::new(
+            labels_snd.clone(),
+        ))],
     )?;
+
+    probes::lsm::LsmTracepoints::run_labels_loop(lsm_bpf, labels_recv);
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
