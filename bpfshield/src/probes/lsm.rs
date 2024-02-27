@@ -58,14 +58,21 @@ impl LsmTracepoints {
                             unsafe { &mut *(buf.as_ptr() as *mut BShieldEvent) };
 
                         let mut event_ctx = [0i64; 5];
-                        let ctx = th_ctx_tracker
+                        let mut ctx = th_ctx_tracker
                             .check_process_label(utils::str_from_buf_nul(&be.path).unwrap_or(""))
-                            .or_else(|| {
-                                th_ctx_tracker.check_process_label(
+                            .unwrap_or(Vec::new());
+
+                        let mut propogate_to_parent = false;
+                        if ctx.is_empty() {
+                            ctx = th_ctx_tracker
+                                .check_process_label(
                                     utils::str_from_buf_nul(&be.p_path).unwrap_or(""),
                                 )
-                            })
-                            .unwrap_or(Vec::new());
+                                .unwrap_or(Vec::new());
+                            if !ctx.is_empty() {
+                                propogate_to_parent = true;
+                            }
+                        }
 
                         for (i, c) in ctx.into_iter().enumerate() {
                             if i >= 5 {
@@ -75,7 +82,27 @@ impl LsmTracepoints {
                         }
 
                         be.labels = event_ctx;
+                        println!(
+                            "Path: {}, PPatth: {}, ppid: {:?}, pid: {}, labels: {:?}",
+                            utils::str_from_buf_nul(&be.path).unwrap_or(""),
+                            utils::str_from_buf_nul(&be.p_path).unwrap_or(""),
+                            be.ppid,
+                            be.pid,
+                            be.labels
+                        );
+
+                        if propogate_to_parent {
+                            if let Err(e) = th_labels_snd.send(PsLabels {
+                                ppid: be.ppid.unwrap_or(0),
+                                pid: be.ppid.unwrap_or(0),
+                                labels: be.labels,
+                            }) {
+                                warn!("Could not send Labels. Err: {}", e);
+                            }
+                        }
+
                         if let Err(e) = th_labels_snd.send(PsLabels {
+                            ppid: be.ppid.unwrap_or(0),
                             pid: be.pid,
                             labels: be.labels,
                         }) {
@@ -148,17 +175,30 @@ impl LsmTracepoints {
             loop {
                 match recv.recv() {
                     Ok(ps_labels) => {
-                        let mut shared_labels = labels_map.get(&ps_labels.pid, 0).unwrap_or([0; 5]);
+                        let mut new_labels = Vec::with_capacity(5);
+                        let parent_labels = labels_map.get(&ps_labels.ppid, 0).unwrap_or([0; 5]);
 
-                        let mut pos = shared_labels.iter().position(|l| *l == 0).unwrap_or(0);
-                        for l in ps_labels.labels.into_iter() {
-                            if pos >= 5 {
+                        let shared_labels = labels_map.get(&ps_labels.pid, 0).unwrap_or([0; 5]);
+
+                        for l in parent_labels
+                            .into_iter()
+                            .chain(shared_labels.into_iter())
+                            .chain(ps_labels.labels.into_iter())
+                        {
+                            if l != 0 && !new_labels.contains(&l) {
+                                new_labels.push(l);
+                            }
+                        }
+
+                        let mut parsed_labels = [0; 5];
+                        for (i, l) in new_labels.into_iter().enumerate() {
+                            if i >= 5 {
                                 break;
                             }
-                            shared_labels[pos] = l;
-                            pos += 1;
+                            parsed_labels[i] = l;
                         }
-                        if let Err(e) = labels_map.insert(ps_labels.pid, shared_labels, 0) {
+
+                        if let Err(e) = labels_map.insert(ps_labels.pid, parsed_labels, 0) {
                             error!("Could not insert new labels. Error: {}", e);
                         }
                     }

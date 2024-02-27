@@ -95,10 +95,6 @@ fn check_rule_op(op: &BShieldOp, var: &LsmRuleVar) -> bool {
     }
 }
 
-fn check_context(op: &BShieldOp, be: &BShieldEvent) -> bool {
-    false
-}
-
 struct RuleResult {
     hits: [u16; 5],
     action: BShieldAction,

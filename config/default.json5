@@ -1,13 +1,15 @@
 {
     process_labels: {
         container: [
-            { ends_with: "containerd-shim-runc-v2"}
+            { contains: "containerd-shim-runc" },
+            { ends_with: "/runc"}
         ],
         shell: [
-            { ends_with: "bash" },
-            { ends_with: "sh" },
-            { ends_with: "csh" },
-            { ends_with: "ksh" }
+            { eq: "bash" },
+            { ends_with: "/bash" },
+            { ends_with: "/sh" },
+            { ends_with: "/csh" },
+            { ends_with: "/ksh" }
         ],
         webserver: [
             { starts_with: "nginx" },

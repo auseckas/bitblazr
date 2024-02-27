@@ -19,6 +19,7 @@ pub(crate) trait Probe {
 
 #[derive(Debug)]
 pub(crate) struct PsLabels {
+    pub ppid: u32,
     pub pid: u32,
     pub labels: [i64; 5],
 }

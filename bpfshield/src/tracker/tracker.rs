@@ -256,7 +256,7 @@ impl BSProcessTracker {
                                 if matches!(event.event_type, BShieldEventType::Listen)
                                     || matches!(event.event_type, BShieldEventType::Exec)
                                 {
-                                    println!("Entry: {:#?}", entry);
+                                    // println!("Entry: {:#?}", entry);
                                 }
                                 std::future::ready(entry)
                             })

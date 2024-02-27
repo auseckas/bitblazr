@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy)]
 enum ContextOp {
+    Eq,
     StartsWith,
     EndsWith,
     Contains,
@@ -16,6 +17,7 @@ enum ContextOp {
 impl ContextOp {
     fn from_str(s: &str) -> Result<ContextOp, anyhow::Error> {
         let op = match s.trim().to_lowercase().as_str() {
+            "eq" => ContextOp::Eq,
             "starts_with" => ContextOp::StartsWith,
             "ends_with" => ContextOp::EndsWith,
             "contains" => ContextOp::Contains,
@@ -70,7 +72,6 @@ impl ContextTracker {
     }
 
     pub fn check_process_label(&self, p_name: &str) -> Option<Vec<i64>> {
-        println!("Checking labels for: {}", p_name);
         let mut labels = Vec::new();
         let hay_end = p_name.len();
         for (label, (ac, entries)) in self.patterns.iter() {
@@ -80,6 +81,7 @@ impl ContextTracker {
                     let mat_end = m.end();
 
                     let matched = match mat.op {
+                        ContextOp::Eq => mat_start == 0 && hay_end == mat_end,
                         ContextOp::StartsWith => mat_start == 0,
                         ContextOp::EndsWith => hay_end == mat_end,
                         ContextOp::Contains => true,
