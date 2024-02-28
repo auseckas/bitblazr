@@ -227,6 +227,7 @@ impl Probe for LsmTracepoints {
         self.load_program(bpf, &btf, "file_open")?;
         self.load_program(bpf, &btf, "bprm_check_security")?;
         self.load_program(bpf, &btf, "socket_listen")?;
+        self.load_program(bpf, &btf, "socket_connect")?;
 
         Ok(())
     }

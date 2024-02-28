@@ -16,6 +16,7 @@ pub enum BShieldEventType {
     Exit = 1,
     Open = 2,
     Listen = 3,
+    Connect = 4,
 }
 
 impl BShieldRuleVar for BShieldEventType {

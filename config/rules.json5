@@ -30,7 +30,7 @@
         rules: {
             path: [{not: {starts_with: "/usr/bin"}}]
         },
-        action: 'allow'
+        action: 'block'
     },
     {
         class: 'file',
