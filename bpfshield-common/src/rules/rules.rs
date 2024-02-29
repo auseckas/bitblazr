@@ -130,6 +130,7 @@ pub struct BShieldRule {
     pub event: BShieldEventType,
     pub context: [i64; 5],
     pub ops: [i32; OPS_PER_RULE], // positions in Rule ops array
+    pub ops_len: u16,
     pub action: BShieldAction,
 }
 

@@ -138,6 +138,7 @@ impl LsmTracepoints {
             event: BShieldEventType::Undefined,
             context: [0; 5],
             ops: [-1; OPS_PER_RULE],
+            ops_len: 0,
             action: BShieldAction::Undefined,
         };
 

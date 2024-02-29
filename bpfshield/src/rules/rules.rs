@@ -78,8 +78,16 @@ fn value_to_var(
 
             let mut sbuf = [0; 25];
             let sbuf_len = path.len() as u16;
-            for (i, ch) in path.as_bytes().iter().enumerate() {
-                sbuf[i] = *ch;
+
+            // Reverse buffer for EndsWith, to make verifier on the other side happy
+            if matches!(comm, BShieldRuleCommand::EndsWith) {
+                for (i, ch) in path.as_bytes().iter().rev().enumerate() {
+                    sbuf[i] = *ch;
+                }
+            } else {
+                for (i, ch) in path.as_bytes().iter().enumerate() {
+                    sbuf[i] = *ch;
+                }
             }
 
             BShieldVar {
@@ -208,15 +216,22 @@ pub(crate) fn load_rules(
             let class: BShieldRuleClass = get_field(&mut rule, "class")?;
             let event: BShieldEventType = get_field(&mut rule, "event")?;
             let action: BShieldAction = get_field(&mut rule, "action")?;
-            let ctx = rule
-                .get("context")
-                .and_then(|ctx| ctx.as_array())
-                .map(|e| {
-                    e.iter()
-                        .filter_map(|v| labels.get(v.as_str().unwrap_or("")).map(|l| *l))
-                })
-                .map(|fm| fm.collect::<Vec<i64>>())
-                .unwrap_or(Vec::new());
+            let mut ctx = Vec::new();
+            if let Some(values) = rule.get("context").and_then(|ctx| ctx.as_array()) {
+                for v in values.iter() {
+                    let i_label = match labels.get(v.as_str().unwrap_or("")) {
+                        Some(l) => l,
+                        None => {
+                            return Err(BSError::InvalidAttribute {
+                                attribute: "context",
+                                value: v.as_str().unwrap_or("").to_string(),
+                            }
+                            .into());
+                        }
+                    };
+                    ctx.push(*i_label);
+                }
+            }
 
             let mut context = [0; 5];
             for (i, l) in ctx.into_iter().enumerate() {
@@ -249,6 +264,7 @@ pub(crate) fn load_rules(
             }
 
             let mut rule_ops_idx = [-1i32; OPS_PER_RULE];
+            let rule_ops_len = shield_ops_idx.len();
             for (i, idx) in shield_ops_idx.into_iter().enumerate() {
                 rule_ops_idx[i] = idx;
             }
@@ -259,6 +275,7 @@ pub(crate) fn load_rules(
                 event: event,
                 context: context,
                 ops: rule_ops_idx,
+                ops_len: rule_ops_len as u16,
                 action: action,
             };
 
@@ -272,6 +289,7 @@ pub(crate) fn load_rules(
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     use std::collections::HashMap;
 
     use super::load_rules;
@@ -375,8 +393,8 @@ mod tests {
                     "action": "block",
                     "class": "socket",
                     "event": "listen",
+                    "context": ["container"],
                     "rules": {
-                        "context": [{"eq": "container"}],
                         "port": [
                             {
                                 "neq": 80,
@@ -398,17 +416,21 @@ mod tests {
                 .collect::<HashMap<String, Value>>(),
             _ => panic!("Rules test definition is not an object"),
         };
-        let (_shield_rules, shield_ops) = load_rules(&labels, rules_obj).unwrap();
-        let context_pos = shield_ops
+        let (shield_rules, _shield_ops) = load_rules(&labels, rules_obj).unwrap();
+
+        assert!(shield_rules
+            .values()
+            .next()
+            .unwrap()
             .iter()
-            .position(|op| matches!(op.target, BShieldRuleTarget::Context));
-        assert!(context_pos.is_some());
-        let op = shield_ops[context_pos.unwrap()];
-        assert_eq!(op.var.int, get_hash("container") as i64);
+            .next()
+            .unwrap()
+            .context
+            .contains(&(get_hash("container") as i64)));
     }
 
     #[test]
-    fn check_bad_rules_context() {
+    fn check_insvalid_op() {
         let mut labels: HashMap<String, i64> = HashMap::new();
         labels.insert("container".to_string(), 6027998744940314019);
         labels.insert("webserver".to_string(), 7887656042122143105);
@@ -443,8 +465,55 @@ mod tests {
             _ => panic!("Rules test definition is not an object"),
         };
         let result = load_rules(&labels, rules_obj);
+
         if let Err(e) = result {
             assert!(e.to_string().contains("Invalid attribute type"));
+        } else {
+            panic!("Expected and error");
+        }
+    }
+
+    #[test]
+    fn check_bad_rules_context() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+            "definitions": [
+                {
+                    "action": "block",
+                    "class": "socket",
+                    "event": "listen",
+                    "context": ["bad_context"],
+                    "rules": {
+                        "port": [
+                            {
+                                "neq": 80,
+                            },
+                            {
+                                "neq": 443,
+                            }
+                        ]
+                    }
+                }
+
+            ]
+        });
+        // let rules = HashMap::new();
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+        let result = load_rules(&labels, rules_obj);
+
+        if let Err(e) = result {
+            assert!(e.to_string().contains("Invalid attribute"));
+        } else {
+            panic!("Expected and error");
         }
     }
 }
