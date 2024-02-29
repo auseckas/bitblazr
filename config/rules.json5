@@ -49,5 +49,14 @@
         },
         action: 'block'
     },
-
+    {
+        class: 'socket',
+        event: 'connect',
+        rules: {
+            ip_version: [{eq: 4}],
+            ip_type: [{neq: 'private'}],
+            port: [{neq: 80}, {neq: 443 }]
+        },
+        action: 'allow'
+    }
 ]}

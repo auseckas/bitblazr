@@ -97,6 +97,63 @@ fn value_to_var(
                 sbuf_len: sbuf_len,
             }
         }
+        BShieldRuleTarget::IpVersion => {
+            let ip_version = match src.as_u64() {
+                Some(p) => p as i64,
+                None => {
+                    return Err(BSError::InvalidAttributeType {
+                        attribute: "ip_version",
+                        value: format!("{:?}", src),
+                    }
+                    .into());
+                }
+            };
+
+            match ip_version {
+                4 | 6 => (),
+                _ => {
+                    return Err(BSError::InvalidAttribute {
+                        attribute: "ip_version",
+                        value: format!("{}", ip_version),
+                    }
+                    .into());
+                }
+            };
+
+            BShieldVar {
+                var_type: BShieldVarType::Int,
+                int: ip_version,
+                sbuf: [0; 25],
+                sbuf_len: 0,
+            }
+        }
+        BShieldRuleTarget::IpType => {
+            let ip_type = match src.as_str() {
+                Some(s) => BShieldIpType::from_str(s.to_string().as_mut_str()),
+                None => {
+                    return Err(BSError::InvalidAttributeType {
+                        attribute: "ip_type",
+                        value: format!("{:?}", src),
+                    }
+                    .into());
+                }
+            };
+
+            if ip_type.is_undefined() {
+                return Err(BSError::InvalidAttribute {
+                    attribute: "ip_type",
+                    value: format!("{:?}", src),
+                }
+                .into());
+            }
+
+            BShieldVar {
+                var_type: BShieldVarType::Int,
+                int: ip_type as i64,
+                sbuf: [0; 25],
+                sbuf_len: 0,
+            }
+        }
         _ => {
             return Err(BSError::InvalidAttribute {
                 attribute: "target",

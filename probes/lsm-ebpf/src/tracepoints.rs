@@ -17,9 +17,10 @@ use aya_bpf::bindings::path;
 
 use aya_bpf::memcpy;
 use bpfshield_common::{
-    rules::BShieldOp, rules::BShieldRule, rules::BShieldRuleClass, rules::BShieldRuleCommand,
-    rules::BShieldRuleTarget, rules::BShieldRulesKey, rules::BShieldVar, rules::BShieldVarType,
-    BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType, OPS_PER_RULE, RULES_PER_KEY,
+    rules::BShieldIpType, rules::BShieldOp, rules::BShieldRule, rules::BShieldRuleClass,
+    rules::BShieldRuleCommand, rules::BShieldRuleTarget, rules::BShieldRulesKey, rules::BShieldVar,
+    rules::BShieldVarType, BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType,
+    OPS_PER_RULE, RULES_PER_KEY,
 };
 use no_std_net::{Ipv4Addr, Ipv6Addr};
 
@@ -53,6 +54,8 @@ static mut LOCAL_OPS_RESULTS: PerCpuHashMap<i64, bool> =
 
 struct RuleVars<'a> {
     port: i64,
+    ip_version: i64,
+    ip_type: u32,
     path: &'a [u8],
 }
 
@@ -266,7 +269,33 @@ fn process_ops(ctx: &LsmContext, key: &BShieldRulesKey, var: RuleVars) -> Result
                 }
                 int_compare(&op.command, var.port, &op.var)
             }
-            BShieldRuleTarget::Context => false,
+            BShieldRuleTarget::IpVersion => {
+                if var.ip_version == 0 {
+                    continue;
+                }
+                int_compare(&op.command, var.ip_version, &op.var)
+            }
+            BShieldRuleTarget::IpType => {
+                let res = match op.var.int {
+                    _ if op.var.int == BShieldIpType::Private as i64 => {
+                        (var.ip_type >> 24) & 0xFF != 0
+                    }
+                    _ if op.var.int == BShieldIpType::Public as i64 => {
+                        (var.ip_type >> 16) & 0xFF != 0
+                    }
+                    _ if op.var.int == BShieldIpType::Loopback as i64 => {
+                        (var.ip_type >> 8) & 0xFF != 0
+                    }
+                    _ if op.var.int == BShieldIpType::Multicast as i64 => var.ip_type & 0xFF != 0,
+                    _ => false,
+                };
+
+                match op.command {
+                    BShieldRuleCommand::Eq => res,
+                    BShieldRuleCommand::Neq => !res,
+                    _ => false,
+                }
+            }
             _ => continue,
         };
 
@@ -325,7 +354,7 @@ fn finalize(
                         break;
                     }
                 }
-                info!(ctx, "Matched rule: {}", rule.id);
+                debug!(ctx, "Matched rule: {}", rule.id);
                 if matches!(rule.action, BShieldAction::Block) {
                     rule_hits.action = BShieldAction::Block;
                     break;
@@ -396,44 +425,72 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
     process_labels(&ctx, &key, ppid)?;
     prime_ops(&ctx, &key)?;
 
-    let var = RuleVars {
-        port: 0,
-        path: &[0; 0],
+    let ip_version = match sa_family {
+        AF_INET => 4,
+        AD_INET6 => 6,
+        _ => 0,
     };
-    process_ops(&ctx, &key, var)?;
-    let rule_hits = finalize(&ctx, &key, &mut be)?;
+
+    let mut port = 0;
+    let mut ip_type: u32 = 0;
 
     if sa_family == AF_INET {
         let sockaddr_in: *const sockaddr_in = unsafe { ctx.arg(1) };
         let int_ip = unsafe { (*sockaddr_in).sin_addr.to_be() };
 
         let addr = Ipv4Addr::from(int_ip);
+        port = unsafe { (*sockaddr_in).sin_port.to_be() };
 
-        // info!(
-        //     &ctx,
-        //     "IPv4 Address: {}, port: {}",
-        //     (addr.is_private() || addr.is_loopback() || addr.is_multicast()) as u8,
-        //     unsafe { (*sockaddr_in).sin_port.to_be() }
-        // );
+        let ip_private = addr.is_private();
+        let ip_public = !ip_private;
+        let ip_loopback = addr.is_loopback();
+        let ip_multicast = addr.is_multicast();
+
+        ip_type = (ip_private as u32) << 24
+            | (ip_public as u32) << 16
+            | (ip_loopback as u32) << 8
+            | ip_multicast as u32;
     } else if sa_family == AF_INET6 {
         let sockaddr_in: sockaddr_in6 = match unsafe { bpf_probe_read(ctx.arg(1)) } {
             Ok(ip) => ip,
             Err(_) => return Ok(0),
         };
 
-        let addr = Ipv6Addr::from(sockaddr_in.sin6_addr);
+        let addr6 = Ipv6Addr::from(sockaddr_in.sin6_addr);
         let port = sockaddr_in.sin6_port.to_be();
-        if port == 0 {
-            return Ok(0);
-        }
-        // info!(
-        //     &ctx,
-        //     "IPv6 Address: {}, port: {}",
-        //     (addr.is_loopback() || addr.is_unspecified()) as u8,
-        //     sockaddr_in.sin6_port.to_be()
-        // );
+
+        ip_type |= 1u32 << 16;
+        ip_type |= (addr6.is_loopback() as u32) << 8;
+
+        let octets = addr6.octets();
+        let fs = (octets[0] as u16) << 8 | (octets[1] as u16);
+        let ip_multicast = fs & 0xff00 == 0xff00;
+        ip_type |= ip_multicast as u32;
     }
-    Ok(0)
+
+    debug!(
+        &ctx,
+        "Port: {}, IP Version: {}, ip_type: {}", port, ip_version, ip_type
+    );
+
+    let var = RuleVars {
+        port: port as i64,
+        ip_version: ip_version as i64,
+        ip_type: ip_type,
+        path: &[0; 0],
+    };
+    process_ops(&ctx, &key, var)?;
+    let rule_hits = finalize(&ctx, &key, &mut be)?;
+
+    unsafe {
+        LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+    }
+
+    if matches!(rule_hits.action, BShieldAction::Block) {
+        Ok(-1)
+    } else {
+        Ok(0)
+    }
 }
 
 fn process_file_exec(ctx: LsmContext) -> Result<i32, i32> {
@@ -468,6 +525,8 @@ fn process_file_exec(ctx: LsmContext) -> Result<i32, i32> {
 
     let var = RuleVars {
         port: 0,
+        ip_version: 0,
+        ip_type: 0,
         path: sbuf,
     };
     process_ops(&ctx, &key, var)?;
@@ -519,6 +578,8 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
 
     let var = RuleVars {
         port: 0,
+        ip_version: 0,
+        ip_type: 0,
         path: sbuf,
     };
     process_ops(&ctx, &key, var)?;
@@ -559,6 +620,8 @@ fn process_socket_listen(ctx: LsmContext) -> Result<i32, i32> {
 
     let var = RuleVars {
         port: be.port as i64,
+        ip_version: 0,
+        ip_type: 0,
         path: &[0; 0],
     };
     process_ops(&ctx, &key, var)?;

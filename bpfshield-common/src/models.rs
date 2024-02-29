@@ -27,6 +27,7 @@ impl BShieldRuleVar for BShieldEventType {
             "exit" => BShieldEventType::Exit,
             "open" => BShieldEventType::Open,
             "listen" => BShieldEventType::Listen,
+            "connect" => BShieldEventType::Connect,
             _ => BShieldEventType::Undefined,
         }
     }

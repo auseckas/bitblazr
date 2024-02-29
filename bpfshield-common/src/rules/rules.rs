@@ -9,11 +9,39 @@ pub trait BShieldRuleVar {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
+pub enum BShieldIpType {
+    Undefined = -1,
+    Private = 0,
+    Public = 1,
+    Loopback = 2,
+    Multicast = 3,
+}
+
+impl BShieldRuleVar for BShieldIpType {
+    fn from_str(s: &mut str) -> Self {
+        s.make_ascii_lowercase();
+        match s.trim() {
+            "private" => BShieldIpType::Private,
+            "public" => BShieldIpType::Public,
+            "loopback" => BShieldIpType::Loopback,
+            "multicast" => BShieldIpType::Multicast,
+            _ => BShieldIpType::Undefined,
+        }
+    }
+
+    fn is_undefined(&self) -> bool {
+        matches!(self, BShieldIpType::Undefined)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(C)]
 pub enum BShieldRuleTarget {
     Undefined = -1,
     Port = 0,
     Path = 1,
-    Context = 2,
+    IpVersion = 2,
+    IpType = 3,
 }
 
 impl BShieldRuleVar for BShieldRuleTarget {
@@ -22,7 +50,8 @@ impl BShieldRuleVar for BShieldRuleTarget {
         match s.trim() {
             "port" => BShieldRuleTarget::Port,
             "path" => BShieldRuleTarget::Path,
-            "context" => BShieldRuleTarget::Context,
+            "ip_version" => BShieldRuleTarget::IpVersion,
+            "ip_type" => BShieldRuleTarget::IpType,
             _ => BShieldRuleTarget::Undefined,
         }
     }
@@ -71,8 +100,12 @@ pub enum BShieldRuleClass {
 
 impl BShieldRuleClass {
     pub fn is_supported_target(&self, t: &BShieldRuleTarget) -> bool {
-        let socket_targets = &[BShieldRuleTarget::Context, BShieldRuleTarget::Port];
-        let file_targets = &[BShieldRuleTarget::Context, BShieldRuleTarget::Path];
+        let socket_targets = &[
+            BShieldRuleTarget::IpType,
+            BShieldRuleTarget::IpVersion,
+            BShieldRuleTarget::Port,
+        ];
+        let file_targets = &[BShieldRuleTarget::Path];
         match self {
             BShieldRuleClass::Socket => socket_targets.iter().find(|target| *target == t).is_some(),
             BShieldRuleClass::File => file_targets.iter().find(|target| *target == t).is_some(),
