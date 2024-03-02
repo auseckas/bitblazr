@@ -5,10 +5,12 @@ use bpfshield_common::{
     utils, BShieldEventType, ARGV_COUNT,
 };
 use chrono::{DateTime, Utc};
+use std::time::Instant;
+
 use crossbeam_channel;
-use log::{error, warn};
 use moka::future::Cache;
 use std::sync::Arc;
+use tracing::{error, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct BSProtoPort {
@@ -58,7 +60,7 @@ impl BSProcessTracker {
                 Ok(s) => s,
                 Err(e) => {
                     warn!(
-                        "Could not convert argv[{}] buffer into String. Err: {}",
+                        "process_argv: Could not convert argv[{}] buffer into String. Err: {}",
                         i, e
                     );
                     continue;
@@ -78,6 +80,8 @@ impl BSProcessTracker {
         let thread_tracker = tracker.clone();
 
         tokio::spawn(async move {
+            let mut event_tracker_timer = Instant::now();
+            let mut event_tracker = 0;
             loop {
                 match recv.recv() {
                     Ok(event) => {
@@ -114,6 +118,14 @@ impl BSProcessTracker {
                         thread_tracker
                             .entry(event.pid)
                             .and_upsert_with(|loc| {
+                                event_tracker += 1;
+                                let elapsed = event_tracker_timer.elapsed().as_secs();
+                                if elapsed >= 60 {
+                                    info!("Events Per Second: {}", event_tracker / elapsed);
+                                    event_tracker = 0;
+                                    event_tracker_timer = Instant::now();
+                                }
+
                                 let entry = match loc {
                                     Some(entry) => {
                                         let mut arc_e = entry.into_value();

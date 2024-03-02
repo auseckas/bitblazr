@@ -3,8 +3,27 @@ use std::collections::HashMap;
 use std::env;
 
 #[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]
-pub struct ShieldConfig {
+pub(crate) struct ShieldLogEntry {
+    pub enable: bool,
+    pub target: String,
+    pub directory: Option<String>,
+    pub prefix: Option<String>,
+    pub rotation: Option<String>,
+    pub max_files: Option<usize>,
+}
+
+#[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]
+pub(crate) struct ShieldLogsConfig {
+    pub default: ShieldLogEntry,
+    pub errors: Option<ShieldLogEntry>,
+    pub events: Option<ShieldLogEntry>,
+    pub alerts: Option<ShieldLogEntry>,
+}
+
+#[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]
+pub(crate) struct ShieldConfig {
     pub process_labels: HashMap<String, Vec<HashMap<String, String>>>,
+    pub logs: ShieldLogsConfig,
 }
 
 pub(crate) fn load_config() -> Result<ShieldConfig, anyhow::Error> {

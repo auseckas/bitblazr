@@ -1,4 +1,28 @@
 {
+    // Logging setup
+    logs: {
+        default: {
+            enable: true,
+            target: "stdout"
+        },
+        errors: {
+            enable: true,
+            target: "stderr"
+        },
+        events: {
+            enable: true,
+            target: "stdout"
+        },
+        alerts: {
+            enable: true,
+            target: "file",
+            directory: "/tmp",
+            prefix: "bpfshield_alerts.log",
+            rotation: "hourly",
+            max_files: 5
+        }
+    },
+    // Definitions used in context detection
     process_labels: {
         container: [
             { contains: "containerd-shim-runc" },

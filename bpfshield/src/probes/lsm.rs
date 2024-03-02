@@ -13,9 +13,9 @@ use bpfshield_common::utils;
 use bpfshield_common::{BShieldAction, BShieldEventType, OPS_PER_RULE, RULES_PER_KEY};
 use bytes::BytesMut;
 use crossbeam_channel;
-use log::{error, warn};
 use std::result::Result;
 use std::sync::Arc;
+use tracing::{error, warn};
 
 pub struct LsmTracepoints {
     labels_snd: crossbeam_channel::Sender<PsLabels>,
@@ -145,7 +145,7 @@ impl LsmTracepoints {
         let mut map_rules: AyaHashMap<&mut MapData, BShieldRulesKey, [BShieldRule; RULES_PER_KEY]> =
             AyaHashMap::try_from(bpf.map_mut("LSM_RULES").unwrap()).unwrap();
 
-        let (lsm_rules, shield_ops) = rules::load_rules_from_config(ctx_tracker.get_labels())?;
+        let (lsm_rules, shield_ops) = rules::load_rules_from_config("kernel", ctx_tracker.get_labels())?;
         for (key, rules) in lsm_rules.into_iter() {
             let mut rules_buf = [RULE_UNDEFINED; RULES_PER_KEY];
             for (i, rule) in rules.into_iter().enumerate() {
@@ -200,11 +200,11 @@ impl LsmTracepoints {
                         }
 
                         if let Err(e) = labels_map.insert(ps_labels.pid, parsed_labels, 0) {
-                            error!("Could not insert new labels. Error: {}", e);
+                            error!("run_labels_loop: Could not insert new labels. Error: {}", e);
                         }
                     }
                     Err(e) => {
-                        error!("Error in labels loop. E: {}", e);
+                        error!("run_labels_loop: Error in labels loop. E: {}", e);
                         break;
                     }
                 }

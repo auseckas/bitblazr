@@ -44,6 +44,8 @@ pub enum BShieldAction {
     Allow = 0,
     Block = 1,
     Ignore = 2,
+    Log = 3,
+    Alert = 4,
 }
 
 impl BShieldRuleVar for BShieldAction {
@@ -53,6 +55,8 @@ impl BShieldRuleVar for BShieldAction {
             "allow" => BShieldAction::Allow,
             "block" => BShieldAction::Block,
             "ignore" => BShieldAction::Ignore,
+            "log" => BShieldAction::Log,
+            "alert" => BShieldAction::Alert,
             _ => BShieldAction::Undefined,
         }
     }

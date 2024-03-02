@@ -6,9 +6,9 @@ use aya::util::online_cpus;
 use aya::Bpf;
 use bpfshield_common::models::BShieldEvent;
 use bytes::BytesMut;
-use log::warn;
 use std::result::Result;
 use std::sync::Arc;
+use tracing::warn;
 
 pub struct Tracepoints {}
 

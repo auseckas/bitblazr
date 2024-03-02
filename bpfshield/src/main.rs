@@ -1,9 +1,3 @@
-use aya::Bpf;
-use log::{debug, info};
-use tokio::signal;
-
-use crate::loader::EbpfLoader;
-
 extern crate crossbeam_channel;
 extern crate serde_derive;
 extern crate serde_json;
@@ -11,20 +5,43 @@ extern crate serde_json;
 mod config;
 mod errors;
 mod loader;
+mod logs;
 pub mod probes;
 mod rules;
 mod tracker;
 mod utils;
 
+use aya::Bpf;
+use tokio::signal;
+
+use crate::loader::EbpfLoader;
+
 use tracker::labels::ContextTracker;
 
 use crate::probes::PsLabels;
 use errors::BSError;
+use logs::BShieldLogs;
 use std::sync::Arc;
+use tracing::{debug, info};
+
+struct TestWriter;
+
+impl std::io::Write for TestWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let buf_len = buf.len();
+
+        println!("Blah: {}", String::from_utf8_lossy(buf));
+        // io::stdout().write_all(buf).unwrap();
+        Ok(buf_len)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    env_logger::init();
     let config = config::load_config()?;
 
     // Bump the memlock rlimit. This is needed for older kernels that don't use the
@@ -33,6 +50,10 @@ async fn main() -> Result<(), anyhow::Error> {
         rlim_cur: libc::RLIM_INFINITY,
         rlim_max: libc::RLIM_INFINITY,
     };
+
+    let _logs = BShieldLogs::new(&config)?;
+
+    info!(target: "alert", "Test");
     let ret = unsafe { libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlim) };
     if ret != 0 {
         debug!("remove limit on locked memory failed, ret is: {}", ret);

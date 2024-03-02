@@ -1,7 +1,6 @@
 use crate::BSError;
 use bpfshield_common::{rules::*, BShieldAction, BShieldEventType, OPS_PER_RULE};
 use config::{Config, File, FileFormat};
-use log::warn;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::env;
@@ -234,6 +233,7 @@ fn parse_ops(
 }
 
 pub(crate) fn load_rules_from_config(
+    rules_type: &str,
     labels: &HashMap<String, i64>,
 ) -> Result<(HashMap<BShieldRulesKey, Vec<BShieldRule>>, Vec<BShieldOp>), anyhow::Error> {
     let mut config_dir = env::var("CONFIG_DIR").unwrap_or_else(|_| "config/".into());
@@ -251,10 +251,11 @@ pub(crate) fn load_rules_from_config(
     let rules: HashMap<String, Value> = rule_config
         .try_deserialize()
         .map_err(|e| BSError::Deserialize(e.to_string()))?;
-    load_rules(labels, rules)
+    load_rules(rules_type, labels, rules)
 }
 
 pub(crate) fn load_rules(
+    rules_type: &str,
     labels: &HashMap<String, i64>,
     mut rules: HashMap<String, Value>,
 ) -> Result<(HashMap<BShieldRulesKey, Vec<BShieldRule>>, Vec<BShieldOp>), anyhow::Error> {

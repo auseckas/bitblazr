@@ -9,9 +9,7 @@ aya = { git = "https://github.com/aya-rs/aya", features = ["async_tokio"] }
 aya-log = { git = "https://github.com/aya-rs/aya" }
 bpfshield-common = { path = "../bpfshield-common", features = ["user"] }
 anyhow = "1"
-env_logger = "0.10"
 libc = "0.2"
-log = "0.4"
 tokio = { version = "1.25", features = ["macros", "rt", "rt-multi-thread", "net", "signal"] }
 bytes = "1.5"
 config = "0.14"
@@ -24,6 +22,9 @@ chrono = "0.4"
 thiserror = "1.0.57"
 aho-corasick = "1.1"
 parking_lot = "0.12"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["std", "env-filter"] }
+tracing-appender = "0.2"
 
 [[bin]]
 name = "bpfshield"
