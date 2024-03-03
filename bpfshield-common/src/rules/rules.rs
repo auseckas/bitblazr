@@ -9,6 +9,31 @@ pub trait BShieldRuleVar {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
+pub enum BShieldIpProto {
+    Undefined = -1,
+    Icmp = 1,
+    Tcp = 6,
+    Udp = 17,
+}
+
+impl BShieldRuleVar for BShieldIpProto {
+    fn from_str(s: &mut str) -> Self {
+        s.make_ascii_lowercase();
+        match s.trim() {
+            "icmp" => BShieldIpProto::Icmp,
+            "tcp" => BShieldIpProto::Tcp,
+            "udp" => BShieldIpProto::Udp,
+            _ => BShieldIpProto::Undefined,
+        }
+    }
+
+    fn is_undefined(&self) -> bool {
+        matches!(self, BShieldIpProto::Undefined)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(C)]
 pub enum BShieldIpType {
     Undefined = -1,
     Private = 0,
@@ -42,6 +67,7 @@ pub enum BShieldRuleTarget {
     Path = 1,
     IpVersion = 2,
     IpType = 3,
+    IpProto = 4,
 }
 
 impl BShieldRuleVar for BShieldRuleTarget {
@@ -52,6 +78,7 @@ impl BShieldRuleVar for BShieldRuleTarget {
             "path" => BShieldRuleTarget::Path,
             "ip_version" => BShieldRuleTarget::IpVersion,
             "ip_type" => BShieldRuleTarget::IpType,
+            "ip_proto" => BShieldRuleTarget::IpProto,
             _ => BShieldRuleTarget::Undefined,
         }
     }
@@ -104,6 +131,7 @@ impl BShieldRuleClass {
             BShieldRuleTarget::IpType,
             BShieldRuleTarget::IpVersion,
             BShieldRuleTarget::Port,
+            BShieldRuleTarget::IpProto,
         ];
         let file_targets = &[BShieldRuleTarget::Path];
         match self {

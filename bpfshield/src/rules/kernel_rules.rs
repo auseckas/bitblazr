@@ -1,31 +1,10 @@
+use super::get_field;
 use crate::BSError;
 use bpfshield_common::{rules::*, BShieldAction, BShieldEventType, OPS_PER_RULE};
 use config::{Config, File, FileFormat};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::env;
-
-fn get_field<T: BShieldRuleVar>(src: &mut Value, f: &str) -> Result<T, anyhow::Error> {
-    let mut class_str = src
-        .get_mut(f)
-        .and_then(|c| c.as_str())
-        .ok_or(BSError::MissingAttribute(format!(
-            "Rule definition has no field \"{}\"",
-            f
-        )))?
-        .to_string();
-
-    let var = T::from_str(class_str.as_mut_str());
-    if var.is_undefined() {
-        return Err(BSError::InvalidAttribute {
-            attribute: "class",
-            value: class_str,
-        }
-        .into());
-    }
-
-    Ok(var)
-}
 
 fn value_to_var(
     comm: &BShieldRuleCommand,
@@ -153,6 +132,33 @@ fn value_to_var(
                 sbuf_len: 0,
             }
         }
+        BShieldRuleTarget::IpProto => {
+            let ip_proto = match src.as_str() {
+                Some(s) => BShieldIpProto::from_str(s.to_string().as_mut_str()),
+                None => {
+                    return Err(BSError::InvalidAttributeType {
+                        attribute: "ip_proto",
+                        value: format!("{:?}", src),
+                    }
+                    .into());
+                }
+            };
+
+            if ip_proto.is_undefined() {
+                return Err(BSError::InvalidAttribute {
+                    attribute: "ip_proto",
+                    value: format!("{:?}", src),
+                }
+                .into());
+            }
+
+            BShieldVar {
+                var_type: BShieldVarType::Int,
+                int: ip_proto as i64,
+                sbuf: [0; 25],
+                sbuf_len: 0,
+            }
+        }
         _ => {
             return Err(BSError::InvalidAttribute {
                 attribute: "target",
@@ -233,7 +239,7 @@ fn parse_ops(
 }
 
 pub(crate) fn load_rules_from_config(
-    rules_type: &str,
+    rules_section: &str,
     labels: &HashMap<String, i64>,
 ) -> Result<(HashMap<BShieldRulesKey, Vec<BShieldRule>>, Vec<BShieldOp>), anyhow::Error> {
     let mut config_dir = env::var("CONFIG_DIR").unwrap_or_else(|_| "config/".into());
@@ -243,7 +249,7 @@ pub(crate) fn load_rules_from_config(
 
     let rule_config = Config::builder()
         .add_source(File::new(
-            &format!("{}rules.json5", config_dir),
+            &format!("{}{}_rules.json5", config_dir, rules_section),
             FileFormat::Json5,
         ))
         .build()?;
@@ -251,18 +257,19 @@ pub(crate) fn load_rules_from_config(
     let rules: HashMap<String, Value> = rule_config
         .try_deserialize()
         .map_err(|e| BSError::Deserialize(e.to_string()))?;
-    load_rules(rules_type, labels, rules)
+
+    load_rules(rules_section, labels, rules)
 }
 
 pub(crate) fn load_rules(
-    rules_type: &str,
+    rules_section: &str,
     labels: &HashMap<String, i64>,
     mut rules: HashMap<String, Value>,
 ) -> Result<(HashMap<BShieldRulesKey, Vec<BShieldRule>>, Vec<BShieldOp>), anyhow::Error> {
     let mut shield_rules: HashMap<BShieldRulesKey, Vec<BShieldRule>> = HashMap::new();
     let mut shield_ops: Vec<BShieldOp> = Vec::new();
 
-    if let Some(defs) = rules.get_mut("definitions") {
+    if let Some(defs) = rules.get_mut(rules_section) {
         for (rule_id, mut rule) in defs
             .as_array_mut()
             .unwrap_or(&mut Vec::new())
@@ -324,6 +331,13 @@ pub(crate) fn load_rules(
             let mut rule_ops_idx = [-1i32; OPS_PER_RULE];
             let rule_ops_len = shield_ops_idx.len();
             for (i, idx) in shield_ops_idx.into_iter().enumerate() {
+                if i >= OPS_PER_RULE {
+                    return Err(BSError::ArrayLimitReached {
+                        attribute: "ops per rule",
+                        limit: OPS_PER_RULE,
+                    }
+                    .into());
+                }
                 rule_ops_idx[i] = idx;
             }
 
@@ -389,7 +403,7 @@ mod tests {
                 .collect::<HashMap<String, Value>>(),
             _ => panic!("Rules test definition is not an object"),
         };
-        let (shield_rules, _shield_ops) = load_rules(&labels, rules_obj).unwrap();
+        let (shield_rules, _shield_ops) = load_rules("kernel", &labels, rules_obj).unwrap();
         assert_eq!(shield_rules.iter().next().unwrap().1[0].ops[0], 0);
         assert_eq!(shield_rules.iter().next().unwrap().1[0].ops[1], 1);
     }
@@ -429,7 +443,7 @@ mod tests {
                 .collect::<HashMap<String, Value>>(),
             _ => panic!("Rules test definition is not an object"),
         };
-        let result = load_rules(&labels, rules_obj);
+        let result = load_rules("kernel", &labels, rules_obj);
         assert!(result.is_err());
         if let Err(e) = result {
             assert_eq!(
@@ -474,7 +488,7 @@ mod tests {
                 .collect::<HashMap<String, Value>>(),
             _ => panic!("Rules test definition is not an object"),
         };
-        let (shield_rules, _shield_ops) = load_rules(&labels, rules_obj).unwrap();
+        let (shield_rules, _shield_ops) = load_rules("kernel", &labels, rules_obj).unwrap();
 
         assert!(shield_rules
             .values()
@@ -522,7 +536,7 @@ mod tests {
                 .collect::<HashMap<String, Value>>(),
             _ => panic!("Rules test definition is not an object"),
         };
-        let result = load_rules(&labels, rules_obj);
+        let result = load_rules("kernel", &labels, rules_obj);
 
         if let Err(e) = result {
             assert!(e.to_string().contains("Invalid attribute type"));
@@ -566,7 +580,7 @@ mod tests {
                 .collect::<HashMap<String, Value>>(),
             _ => panic!("Rules test definition is not an object"),
         };
-        let result = load_rules(&labels, rules_obj);
+        let result = load_rules("kernel", &labels, rules_obj);
 
         if let Err(e) = result {
             assert!(e.to_string().contains("Invalid attribute"));

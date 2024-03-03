@@ -7,6 +7,7 @@ use bpfshield_common::{
 use chrono::{DateTime, Utc};
 use std::time::Instant;
 
+use crate::rules::load_userspace_rules;
 use crossbeam_channel;
 use moka::future::Cache;
 use std::sync::Arc;
@@ -78,8 +79,12 @@ impl BSProcessTracker {
     ) -> Result<(), anyhow::Error> {
         let tracker: Cache<u32, Arc<BSProcess>> = Cache::new(100_000);
         let thread_tracker = tracker.clone();
+        let thread_ctx_tracker = ctx_tracker.clone();
 
         tokio::spawn(async move {
+            let rules = load_userspace_rules("userspace", thread_ctx_tracker.get_labels());
+            println!("Rules: {:?}", rules);
+
             let mut event_tracker_timer = Instant::now();
             let mut event_tracker = 0;
             loop {

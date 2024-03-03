@@ -10,4 +10,6 @@ pub enum BSError<'a> {
     MissingAttribute(String),
     #[error("Deserialize error: {0}")]
     Deserialize(String),
+    #[error("Array limit reached: {attribute:?}, limit: {limit:?}")]
+    ArrayLimitReached { attribute: &'a str, limit: usize },
 }

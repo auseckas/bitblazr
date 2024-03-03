@@ -3,7 +3,7 @@
     logs: {
         default: {
             enable: true,
-            target: "stdout"
+            target: "stdout",
         },
         errors: {
             enable: true,
@@ -11,11 +11,13 @@
         },
         events: {
             enable: true,
-            target: "stdout"
+            target: "stdout",
+            format: "json"
         },
         alerts: {
             enable: true,
             target: "file",
+            format: "json",
             directory: "/tmp",
             prefix: "bpfshield_alerts.log",
             rotation: "hourly",

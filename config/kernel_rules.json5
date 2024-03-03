@@ -1,3 +1,7 @@
+// To accompodate for eBPF restrictions, kernel rules are rather restrictive, you can only 'allow' or 'block'.
+// For comparing integers you can only use 'eq' and 'neq', for strings additional two methods are available:
+//  'starts_with' and 'ends_with'.
+// All matches will be logged by default
 { kernel:  [
     // Block attempts to bind to sockets that are not on port 80 or 443
     {
@@ -55,16 +59,9 @@
         rules: {
             ip_version: [{eq: 4}],
             ip_type: [{neq: 'private'}],
-            port: [{neq: 80}, {neq: 443 }]
+            ip_proto: [{eq: 'tcp'}],
+            port: [{neq: 80}, {neq: 443 }],
         },
         action: 'allow'
-    }
-],
-userspace:  [
-    {
-        class: 'socket',
-        event: 'listen',
-        rules: {},
-        action: 'log'
-    }
-]}
+    }]
+}

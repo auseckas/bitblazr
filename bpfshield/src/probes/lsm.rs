@@ -1,6 +1,7 @@
 use super::Probe;
 use crate::probes::PsLabels;
 use crate::rules;
+use crate::BSError;
 use crate::ContextTracker;
 use aya::maps::perf::{AsyncPerfEventArray, PerfBufferError};
 use aya::maps::{Array, HashMap as AyaHashMap, MapData};
@@ -15,7 +16,7 @@ use bytes::BytesMut;
 use crossbeam_channel;
 use std::result::Result;
 use std::sync::Arc;
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 pub struct LsmTracepoints {
     labels_snd: crossbeam_channel::Sender<PsLabels>,
@@ -82,7 +83,7 @@ impl LsmTracepoints {
                         }
 
                         be.labels = event_ctx;
-                        println!(
+                        debug!(
                             "Path: {}, PPatth: {}, ppid: {:?}, pid: {}, labels: {:?}",
                             utils::str_from_buf_nul(&be.path).unwrap_or(""),
                             utils::str_from_buf_nul(&be.p_path).unwrap_or(""),
@@ -145,12 +146,16 @@ impl LsmTracepoints {
         let mut map_rules: AyaHashMap<&mut MapData, BShieldRulesKey, [BShieldRule; RULES_PER_KEY]> =
             AyaHashMap::try_from(bpf.map_mut("LSM_RULES").unwrap()).unwrap();
 
-        let (lsm_rules, shield_ops) = rules::load_rules_from_config("kernel", ctx_tracker.get_labels())?;
+        let (lsm_rules, shield_ops) = rules::load_kernel_rules("kernel", ctx_tracker.get_labels())?;
         for (key, rules) in lsm_rules.into_iter() {
             let mut rules_buf = [RULE_UNDEFINED; RULES_PER_KEY];
             for (i, rule) in rules.into_iter().enumerate() {
-                if i >= 25 {
-                    break;
+                if i >= RULES_PER_KEY {
+                    return Err(BSError::ArrayLimitReached {
+                        attribute: "rules per key",
+                        limit: RULES_PER_KEY,
+                    }
+                    .into());
                 }
                 rules_buf[i] = rule;
             }

@@ -10,6 +10,7 @@ pub(crate) struct ShieldLogEntry {
     pub prefix: Option<String>,
     pub rotation: Option<String>,
     pub max_files: Option<usize>,
+    pub format: Option<String>,
 }
 
 #[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]

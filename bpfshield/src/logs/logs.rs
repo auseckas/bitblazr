@@ -3,9 +3,53 @@ use crate::errors::BSError;
 use std::io::{self, Write};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_appender::rolling;
-use tracing_subscriber::fmt::layer;
+use tracing_subscriber::fmt::{format, layer};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, EnvFilter, Layer};
+
+macro_rules! parse_filter {
+    ($layers:expr, $layer:expr, $filter:expr) => {{
+        if !$filter.is_empty() {
+            $layers.push(
+                $layer
+                    .with_filter(filter::filter_fn(|metadata| metadata.target() == $filter))
+                    .boxed(),
+            );
+        } else {
+            $layers.push($layer.boxed());
+        }
+    }};
+}
+
+macro_rules! parse_layer {
+    ($layers:expr, $writer:expr, $format:expr, $filter:expr) => {{
+        let s_format = match $format {
+            Some(f) => f.as_str(),
+            None => "full",
+        };
+
+        match s_format.trim().to_ascii_lowercase().as_str() {
+            "compact" => {
+                let layer = layer()
+                    .with_writer($writer)
+                    .event_format(format().compact());
+                parse_filter!($layers, layer, $filter);
+            }
+            "pretty" => {
+                let layer = layer().with_writer($writer).event_format(format().pretty());
+                parse_filter!($layers, layer, $filter);
+            }
+            "json" => {
+                let layer = layer().with_writer($writer).event_format(format().json());
+                parse_filter!($layers, layer, $filter);
+            }
+            _ => {
+                let layer = layer().with_writer($writer);
+                parse_filter!($layers, layer, $filter);
+            }
+        }
+    }};
+}
 
 pub struct BShieldLogs {
     _guards: Vec<WorkerGuard>,
@@ -86,20 +130,16 @@ impl BShieldLogs {
         if logs_conf.default.enable {
             let (w, guard) = BShieldLogs::parse_log_entry(&logs_conf.default)?;
             guards.push(guard);
-            layers.push(layer().with_writer(w).boxed());
+
+            parse_layer!(layers, w, &logs_conf.default.format, "");
         }
 
         if let Some(ref e) = logs_conf.errors {
             if e.enable {
                 let (w, guard) = BShieldLogs::parse_log_entry(&e)?;
                 guards.push(guard);
-                let layer = layer().with_writer(w.with_max_level(tracing::Level::INFO));
 
-                layers.push(
-                    layer
-                        .with_filter(filter::filter_fn(|metadata| metadata.target() == "error"))
-                        .boxed(),
-                );
+                parse_layer!(layers, w, &e.format, "error");
             }
         }
 
@@ -107,12 +147,7 @@ impl BShieldLogs {
             if e.enable {
                 let (w, guard) = BShieldLogs::parse_log_entry(&e)?;
                 guards.push(guard);
-                let layer = layer().with_writer(w);
-                layers.push(
-                    layer
-                        .with_filter(filter::filter_fn(|metadata| metadata.target() == "event"))
-                        .boxed(),
-                );
+                parse_layer!(layers, w, &e.format, "event");
             }
         }
 
@@ -121,17 +156,7 @@ impl BShieldLogs {
                 let (w, guard) = BShieldLogs::parse_log_entry(&e)?;
                 guards.push(guard);
 
-                let format = tracing_subscriber::fmt::format()
-                    .with_level(false)
-                    .with_target(true)
-                    .compact();
-
-                let layer = layer().with_writer(w).event_format(format);
-                layers.push(
-                    layer
-                        .with_filter(filter::filter_fn(|metadata| metadata.target() == "alert"))
-                        .boxed(),
-                );
+                parse_layer!(layers, w, &e.format, "alert");
             }
         }
 
