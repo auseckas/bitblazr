@@ -4,18 +4,25 @@
 // Matching is sequentual, thus if you are configuring ignore rules, they should go in front of broader log or alert rules.
 // Actions available here are: 'log', 'alert', or 'ignore', and unlike kernel side we can use methods like 'multi_starts_with'.
 
-{ userspace:  [
+{ignore: [
+
+],
+
+log:  [
     {
         class: 'file',
-        event: 'open',
-        rules: {
-            path: [
-                { starts_with: [ 
-                    "/etc/passwd",
-                    "/etc/shadow"
-                ]}
-            ]
-        },
-        action: 'log'
+        event: 'exec',
+        directives: {
+            path: { 
+                starts_with: [ 
+                    '/usr/bin',
+                    '/usr/sbin'
+                ]
+            }
+        }
     }
+],
+
+alert: [
+
 ]}

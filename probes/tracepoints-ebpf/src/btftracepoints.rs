@@ -5,6 +5,7 @@ use aya_bpf::BpfContext;
 use aya_bpf::{macros::btf_tracepoint, programs::BtfTracePointContext};
 use aya_log_ebpf::debug;
 
+use bpfshield_common::rules::BShieldRuleClass;
 use bpfshield_common::{BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType};
 
 use crate::common::{LOCAL_BUFFER, TP_BUFFER};
@@ -46,6 +47,7 @@ fn try_spe(ctx: BtfTracePointContext, event_type: BShieldEventType) -> Result<u3
     be.uid = ctx.uid();
     be.gid = ctx.gid();
     be.action = BShieldAction::Allow;
+    be.log_class = BShieldRuleClass::File;
 
     unsafe {
         TP_BUFFER.output(&ctx, be.to_bytes(), 0);

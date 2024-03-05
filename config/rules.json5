@@ -10,7 +10,7 @@
         rules: {
             port: [{neq: 80}, {neq: 443 }]
         },
-        action: 'allow'
+        action: 'block'
     },
     {
         class: 'file',

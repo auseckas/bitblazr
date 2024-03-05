@@ -1,6 +1,5 @@
 use crate::config::{ShieldConfig, ShieldLogEntry};
 use crate::errors::BSError;
-use std::io::{self, Write};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_appender::rolling;
 use tracing_subscriber::fmt::{format, layer};
@@ -9,12 +8,8 @@ use tracing_subscriber::{filter, EnvFilter, Layer};
 
 macro_rules! parse_filter {
     ($layers:expr, $layer:expr, $filter:expr) => {{
-        if !$filter.is_empty() {
-            $layers.push(
-                $layer
-                    .with_filter(filter::filter_fn(|metadata| metadata.target() == $filter))
-                    .boxed(),
-            );
+        if let Some(f) = $filter {
+            $layers.push($layer.with_filter(f).boxed());
         } else {
             $layers.push($layer.boxed());
         }
@@ -32,19 +27,29 @@ macro_rules! parse_layer {
             "compact" => {
                 let layer = layer()
                     .with_writer($writer)
-                    .event_format(format().compact());
+                    .event_format(format().with_target(true).with_level(false).compact());
                 parse_filter!($layers, layer, $filter);
             }
             "pretty" => {
-                let layer = layer().with_writer($writer).event_format(format().pretty());
+                let layer = layer()
+                    .with_writer($writer)
+                    .event_format(format().with_target(true).with_level(false).pretty());
                 parse_filter!($layers, layer, $filter);
             }
             "json" => {
-                let layer = layer().with_writer($writer).event_format(format().json());
+                let layer = layer().with_writer($writer).event_format(
+                    format()
+                        .with_target(true)
+                        .with_level(false)
+                        .json()
+                        .flatten_event(true),
+                );
                 parse_filter!($layers, layer, $filter);
             }
             _ => {
-                let layer = layer().with_writer($writer);
+                let layer = layer()
+                    .with_writer($writer)
+                    .event_format(format().with_target(true).with_level(false));
                 parse_filter!($layers, layer, $filter);
             }
         }
@@ -131,7 +136,19 @@ impl BShieldLogs {
             let (w, guard) = BShieldLogs::parse_log_entry(&logs_conf.default)?;
             guards.push(guard);
 
-            parse_layer!(layers, w, &logs_conf.default.format, "");
+            let mut filters = Vec::new();
+            if logs_conf.errors.is_some() {
+                filters.push("error");
+            }
+            if logs_conf.events.is_some() {
+                filters.push("event");
+            }
+            if logs_conf.alerts.is_some() {
+                filters.push("alert");
+            }
+
+            let f = filter::filter_fn(move |metadata| !filters.contains(&metadata.target()));
+            parse_layer!(layers, w, &logs_conf.default.format, Some(f));
         }
 
         if let Some(ref e) = logs_conf.errors {
@@ -139,7 +156,8 @@ impl BShieldLogs {
                 let (w, guard) = BShieldLogs::parse_log_entry(&e)?;
                 guards.push(guard);
 
-                parse_layer!(layers, w, &e.format, "error");
+                let f = filter::filter_fn(|metadata| metadata.target() == "error");
+                parse_layer!(layers, w, &e.format, Some(f));
             }
         }
 
@@ -147,7 +165,8 @@ impl BShieldLogs {
             if e.enable {
                 let (w, guard) = BShieldLogs::parse_log_entry(&e)?;
                 guards.push(guard);
-                parse_layer!(layers, w, &e.format, "event");
+                let f = filter::filter_fn(|metadata| metadata.target() == "event");
+                parse_layer!(layers, w, &e.format, Some(f));
             }
         }
 
@@ -156,7 +175,8 @@ impl BShieldLogs {
                 let (w, guard) = BShieldLogs::parse_log_entry(&e)?;
                 guards.push(guard);
 
-                parse_layer!(layers, w, &e.format, "alert");
+                let f = filter::filter_fn(|metadata| metadata.target() == "alert");
+                parse_layer!(layers, w, &e.format, Some(f));
             }
         }
 

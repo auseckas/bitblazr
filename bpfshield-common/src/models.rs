@@ -1,6 +1,6 @@
-use crate::rules::BShieldRuleVar;
+use crate::rules::{BShieldRuleClass, BShieldRuleVar};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub enum BShieldEventClass {
     Tracepoint = 0,
@@ -71,6 +71,7 @@ impl BShieldRuleVar for BShieldAction {
 pub struct BShieldEvent {
     pub class: BShieldEventClass,
     pub event_type: BShieldEventType,
+    pub log_class: BShieldRuleClass,
     pub ppid: Option<u32>,
     pub tgid: u32,
     pub pid: u32,

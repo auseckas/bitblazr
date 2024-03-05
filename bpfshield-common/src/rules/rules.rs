@@ -68,6 +68,7 @@ pub enum BShieldRuleTarget {
     IpVersion = 2,
     IpType = 3,
     IpProto = 4,
+    Context = 5,
 }
 
 impl BShieldRuleVar for BShieldRuleTarget {
@@ -79,6 +80,7 @@ impl BShieldRuleVar for BShieldRuleTarget {
             "ip_version" => BShieldRuleTarget::IpVersion,
             "ip_type" => BShieldRuleTarget::IpType,
             "ip_proto" => BShieldRuleTarget::IpProto,
+            "context" => BShieldRuleTarget::Context,
             _ => BShieldRuleTarget::Undefined,
         }
     }
@@ -97,6 +99,7 @@ pub enum BShieldRuleCommand {
     StartsWith = 2,
     EndsWith = 3,
     Not = 4,
+    Contains = 5,
 }
 
 impl BShieldRuleVar for BShieldRuleCommand {
@@ -108,6 +111,7 @@ impl BShieldRuleVar for BShieldRuleCommand {
             "starts_with" => BShieldRuleCommand::StartsWith,
             "ends_with" => BShieldRuleCommand::EndsWith,
             "not" => BShieldRuleCommand::Not,
+            "contains" => BShieldRuleCommand::Contains,
             _ => BShieldRuleCommand::Undefined,
         }
     }

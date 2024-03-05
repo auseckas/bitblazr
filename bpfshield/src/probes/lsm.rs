@@ -1,4 +1,5 @@
 use super::Probe;
+use crate::probes::lsm;
 use crate::probes::PsLabels;
 use crate::rules;
 use crate::BSError;
@@ -14,6 +15,7 @@ use bpfshield_common::utils;
 use bpfshield_common::{BShieldAction, BShieldEventType, OPS_PER_RULE, RULES_PER_KEY};
 use bytes::BytesMut;
 use crossbeam_channel;
+use std::collections::HashMap;
 use std::result::Result;
 use std::sync::Arc;
 use tracing::{debug, error, warn};
@@ -147,6 +149,18 @@ impl LsmTracepoints {
             AyaHashMap::try_from(bpf.map_mut("LSM_RULES").unwrap()).unwrap();
 
         let (lsm_rules, shield_ops) = rules::load_kernel_rules("kernel", ctx_tracker.get_labels())?;
+
+        let mut id_class = HashMap::new();
+        for (_, rules) in lsm_rules.iter() {
+            for r in rules {
+                if id_class.contains_key(&r.id) {
+                    panic!("Bad!");
+                }
+
+                id_class.insert(r.id, r.class);
+            }
+        }
+
         for (key, rules) in lsm_rules.into_iter() {
             let mut rules_buf = [RULE_UNDEFINED; RULES_PER_KEY];
             for (i, rule) in rules.into_iter().enumerate() {

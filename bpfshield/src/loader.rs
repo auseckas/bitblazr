@@ -3,6 +3,9 @@ use crate::tracker::BSProcessTracker;
 use crate::ContextTracker;
 use aya::Bpf;
 use aya_log::BpfLogger;
+use bpfshield_common::rules::BShieldRuleClass;
+use bpfshield_common::BShieldEventClass;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::vec::Vec;
 
@@ -25,6 +28,7 @@ impl EbpfLoader {
             probe.init(bpf, self.tracker.snd.clone(), ctx_tracker.clone())?;
         }
         BpfLogger::init(bpf)?;
+
         Ok(())
     }
 }

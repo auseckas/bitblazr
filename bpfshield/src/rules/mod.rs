@@ -1,8 +1,8 @@
 pub mod kernel_rules;
 pub(crate) use kernel_rules::load_rules_from_config as load_kernel_rules;
 
-pub mod userspace_rules;
-pub(crate) use userspace_rules::load_rules_from_config as load_userspace_rules;
+pub mod log_rules;
+pub(crate) use log_rules::load_rules_from_config as load_log_rules;
 
 use crate::BSError;
 use bpfshield_common::rules::BShieldRuleVar;

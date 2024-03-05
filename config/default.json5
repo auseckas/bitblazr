@@ -12,7 +12,7 @@
         events: {
             enable: true,
             target: "stdout",
-            format: "json"
+            format: "compact"
         },
         alerts: {
             enable: true,

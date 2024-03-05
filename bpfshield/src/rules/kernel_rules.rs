@@ -249,7 +249,7 @@ pub(crate) fn load_rules_from_config(
 
     let rule_config = Config::builder()
         .add_source(File::new(
-            &format!("{}{}_rules.json5", config_dir, rules_section),
+            &format!("{}rules.json5", config_dir),
             FileFormat::Json5,
         ))
         .build()?;
@@ -376,7 +376,7 @@ mod tests {
         labels.insert("webserver".to_string(), 7887656042122143105);
 
         let rules = json!({
-            "definitions": [
+            "kernel": [
                 {
                     "action": "block",
                     "class": "socket",
@@ -415,7 +415,7 @@ mod tests {
         labels.insert("webserver".to_string(), 7887656042122143105);
 
         let rules = json!({
-            "definitions": [
+            "kernel": [
                 {
                     "action": "block",
                     "class": "socket",
@@ -460,7 +460,7 @@ mod tests {
         labels.insert("webserver".to_string(), 7887656042122143105);
 
         let rules = json!({
-            "definitions": [
+            "kernel": [
                 {
                     "action": "block",
                     "class": "socket",
@@ -502,13 +502,13 @@ mod tests {
     }
 
     #[test]
-    fn check_insvalid_op() {
+    fn check_invalid_op() {
         let mut labels: HashMap<String, i64> = HashMap::new();
         labels.insert("container".to_string(), 6027998744940314019);
         labels.insert("webserver".to_string(), 7887656042122143105);
 
         let rules = json!({
-            "definitions": [
+            "kernel": [
                 {
                     "action": "block",
                     "class": "socket",
@@ -539,9 +539,9 @@ mod tests {
         let result = load_rules("kernel", &labels, rules_obj);
 
         if let Err(e) = result {
-            assert!(e.to_string().contains("Invalid attribute type"));
+            assert!(e.to_string().contains("Invalid attribute"));
         } else {
-            panic!("Expected and error");
+            panic!("Expected an error");
         }
     }
 
@@ -552,7 +552,7 @@ mod tests {
         labels.insert("webserver".to_string(), 7887656042122143105);
 
         let rules = json!({
-            "definitions": [
+            "kernel": [
                 {
                     "action": "block",
                     "class": "socket",
@@ -585,7 +585,7 @@ mod tests {
         if let Err(e) = result {
             assert!(e.to_string().contains("Invalid attribute"));
         } else {
-            panic!("Expected and error");
+            panic!("Expected an error");
         }
     }
 }

@@ -2,14 +2,17 @@ use crate::ContextTracker;
 use aya::maps::perf::PerfBufferError;
 use bpfshield_common::{
     models::{BShieldAction, BShieldEvent, BShieldEventClass},
-    utils, BShieldEventType, ARGV_COUNT,
+    utils::{self, str_from_buf_nul},
+    BShieldEventType, ARGV_COUNT,
 };
 use chrono::{DateTime, Utc};
 use std::time::Instant;
+use tracing::Instrument;
 
-use crate::rules::load_userspace_rules;
+use crate::rules::load_log_rules;
 use crossbeam_channel;
 use moka::future::Cache;
+use std::fmt;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
@@ -35,6 +38,52 @@ pub struct BSProcess {
     pub children: Vec<u32>, // [pid,...]
     pub context: Vec<i64>,
     pub argv: Vec<String>,
+}
+
+impl BSProcess {
+    pub fn emit_log_entry(&self, target: &str) {
+        let mut proto = String::new();
+        let mut ports = String::new();
+        if !self.proto_port.is_empty() {
+            proto = match self.proto_port[0].proto {
+                1 => "ICP",
+                6 => "TCP",
+                17 => "UDP",
+                _ => "N/A",
+            }
+            .to_string();
+
+            for pp in &self.proto_port {
+                let port = pp.port;
+                if !ports.is_empty() {
+                    ports.push_str(", ");
+                } else {
+                    ports.push_str("[");
+                }
+                ports.push_str(&port.to_string());
+            }
+            ports.push_str("]");
+        }
+        if proto.is_empty() {
+            proto.push_str("N/A");
+        }
+        if ports.is_empty() {
+            ports.push_str("N/A");
+        }
+
+        match target {
+            "event" => {
+                info!(target: "event", tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, path = self.path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action))
+            }
+            "alert" => {
+                info!(target: "alert", tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, path = self.path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action))
+            }
+            "error" => {
+                info!(target: "error", tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, path = self.path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action))
+            }
+            _ => (),
+        }
+    }
 }
 
 pub struct BSProcessTracker {
@@ -80,10 +129,10 @@ impl BSProcessTracker {
         let tracker: Cache<u32, Arc<BSProcess>> = Cache::new(100_000);
         let thread_tracker = tracker.clone();
         let thread_ctx_tracker = ctx_tracker.clone();
+        let log_rules = load_log_rules(thread_ctx_tracker.get_labels())?;
 
         tokio::spawn(async move {
-            let rules = load_userspace_rules("userspace", thread_ctx_tracker.get_labels());
-            println!("Rules: {:?}", rules);
+            // println!("Log Rules count: {:?}", rules.log.len());
 
             let mut event_tracker_timer = Instant::now();
             let mut event_tracker = 0;
@@ -202,6 +251,18 @@ impl BSProcessTracker {
                                             }
                                         }
 
+                                        if let Ok(log_r) = log_rules.check_rules(&event) {
+                                            if !log_r.ignore {
+                                                if matches!(e.action, BShieldAction::Block)
+                                                    || log_r.alert
+                                                {
+                                                    e.emit_log_entry("alert");
+                                                } else if log_r.log {
+                                                    e.emit_log_entry("event");
+                                                }
+                                            }
+                                        }
+
                                         arc_e
                                     }
                                     None => {
@@ -263,20 +324,24 @@ impl BSProcessTracker {
                                             }
                                         }
 
+                                        if let Ok(log_r) = log_rules.check_rules(&event) {
+                                            if !log_r.ignore {
+                                                if matches!(e.action, BShieldAction::Block)
+                                                    || log_r.alert
+                                                {
+                                                    e.emit_log_entry("alert");
+                                                } else if log_r.log {
+                                                    e.emit_log_entry("event");
+                                                }
+                                            }
+                                        }
                                         Arc::new(e)
                                     }
                                 };
 
-                                // if event.path.starts_with("/usr/bin".as_bytes()) {
-                                //     println!("Entry: {:#?}", entry);
-                                // }
-                                if matches!(event.event_type, BShieldEventType::Listen)
-                                    || matches!(event.event_type, BShieldEventType::Exec)
-                                {
-                                    // println!("Entry: {:#?}", entry);
-                                }
                                 std::future::ready(entry)
                             })
+                            .instrument(tracing::info_span!("BpfShield"))
                             .await;
                     }
                     Err(e) => {

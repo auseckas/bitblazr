@@ -53,7 +53,6 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let _logs = BShieldLogs::new(&config)?;
 
-    info!(target: "alert", "Test");
     let ret = unsafe { libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlim) };
     if ret != 0 {
         debug!("remove limit on locked memory failed, ret is: {}", ret);

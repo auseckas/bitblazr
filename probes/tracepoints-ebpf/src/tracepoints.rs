@@ -9,6 +9,7 @@ use aya_log_ebpf::debug;
 
 use crate::common::{read_list_u8, LOCAL_BUFFER, TP_BUFFER};
 use crate::vmlinux::task_struct;
+use bpfshield_common::rules::BShieldRuleClass;
 use bpfshield_common::{BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType};
 
 #[tracepoint]
@@ -33,6 +34,7 @@ fn try_tps(ctx: TracePointContext) -> Result<u32, u32> {
     be.uid = ctx.uid();
     be.gid = ctx.gid();
     be.action = BShieldAction::Allow;
+    be.log_class = BShieldRuleClass::File;
 
     let task: *const task_struct = unsafe { bpf_get_current_task() as *const _ };
     let parent: *const task_struct = unsafe { bpf_probe_read(&(*task).parent).map_err(|_| 1u32)? };

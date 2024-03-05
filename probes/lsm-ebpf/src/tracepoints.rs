@@ -421,6 +421,8 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
         event_type: BShieldEventType::Connect as i32,
     };
 
+    be.log_class = BShieldRuleClass::Socket;
+
     let ppid = be.ppid.unwrap_or(0) as u32;
 
     process_labels(&ctx, &key, ppid)?;
@@ -524,6 +526,8 @@ fn process_file_exec(ctx: LsmContext) -> Result<i32, i32> {
     };
     let ppid = be.ppid.unwrap_or(0) as u32;
 
+    be.log_class = BShieldRuleClass::File;
+
     process_labels(&ctx, &key, ppid)?;
     prime_ops(&ctx, &key)?;
 
@@ -577,6 +581,7 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
         class: BShieldRuleClass::File as i32,
         event_type: BShieldEventType::Open as i32,
     };
+    be.log_class = BShieldRuleClass::File;
 
     let ppid = be.ppid.unwrap_or(0) as u32;
 
@@ -622,6 +627,7 @@ fn process_socket_listen(ctx: LsmContext) -> Result<i32, i32> {
         class: BShieldRuleClass::Socket as i32,
         event_type: BShieldEventType::Listen as i32,
     };
+    be.log_class = BShieldRuleClass::Socket;
 
     let ppid = be.ppid.unwrap_or(0) as u32;
 
