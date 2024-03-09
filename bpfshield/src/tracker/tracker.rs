@@ -6,19 +6,16 @@ use bpfshield_common::{
     BShieldEventType, ARGV_COUNT,
 };
 use chrono::{DateTime, Utc};
-use std::{borrow::BorrowMut, time::Instant};
+use std::time::Instant;
 use tracing::Instrument;
 
 use crate::rules::load_log_rules;
 use crossbeam_channel;
-use crossbeam_channel::TryRecvError;
-use moka::future::Cache;
 use moka::future::FutureExt;
 use moka::notification::ListenerFuture;
-use std::fmt;
+use moka::{future::Cache, notification::RemovalCause};
 use std::sync::Arc;
-use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct BSProtoPort {
@@ -43,17 +40,24 @@ pub struct BSProcess {
     pub context: Vec<i64>,
     pub argv: Vec<String>,
     pub logged: bool,
-    pub delayed_logging: bool,
 }
 
 impl BSProcess {
-    pub fn emit_log_entry(&mut self, target: &str) {
-        if self.logged {
+    pub fn emit_log_entry(&mut self, target: &str, e: &BShieldEvent, new_info: bool) {
+        let event_path = match str_from_buf_nul(&e.path) {
+            Ok(p) => p,
+            Err(e) => {
+                error!(target: "error", "Could not convert path from &[u8]. Err: {}", e);
+                return;
+            }
+        };
+        if self.logged && !new_info && self.path == event_path {
             return;
         }
 
         let mut proto = String::new();
         let mut ports = String::new();
+
         if !self.proto_port.is_empty() {
             proto = match self.proto_port[0].proto {
                 1 => "ICP",
@@ -74,6 +78,7 @@ impl BSProcess {
             }
             ports.push_str("]");
         }
+
         if proto.is_empty() {
             proto.push_str("N/A");
         }
@@ -81,17 +86,22 @@ impl BSProcess {
             ports.push_str("N/A");
         }
 
+        let path = match e.event_type {
+            BShieldEventType::Exec => self.path.as_str(),
+            _ => event_path,
+        };
+
         self.logged = true;
 
         match target {
             "event" => {
-                info!(target: "event", tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, path = self.path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "event", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action));
             }
             "alert" => {
-                info!(target: "alert", tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, path = self.path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "alert", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action));
             }
             "error" => {
-                info!(target: "error", tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, path = self.path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "error", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action));
             }
             _ => (),
         }
@@ -138,23 +148,23 @@ impl BSProcessTracker {
         recv: crossbeam_channel::Receiver<BShieldEvent>,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
-        let eviction_listener = move |k: Arc<u32>, e: Arc<BSProcess>, cause| -> ListenerFuture {
-            println!("\n== An entry has been evicted. k: {k:?}, cause: {cause:?}");
-
-            async move {
-                println!(
-                    "E: path: {}, logged: {}, {:?}",
-                    e.path, e.logged, e.delayed_logging
-                );
-            }
-            .boxed()
-        };
+        // Eviction listener is used to log events that match log rules but not any kernel rules
+        // Better to log late than never.
+        // let eviction_listener =
+        //     move |_k: Arc<u32>, mut e: Arc<BSProcess>, cause| -> ListenerFuture {
+        //         async move {
+        //             if !matches!(cause, RemovalCause::Replaced) && e.delayed_logging && !e.logged {
+        //                 Arc::make_mut(&mut e).emit_log_entry("event")
+        //             }
+        //         }
+        //         .boxed()
+        //     };
 
         let tracker: Cache<u32, Arc<BSProcess>> = Cache::builder()
             .max_capacity(100_000)
             // .time_to_live(Duration::from_secs(30 * 60))
             // .time_to_idle(Duration::from_secs(60))
-            .async_eviction_listener(eviction_listener)
+            // .async_eviction_listener(eviction_listener)
             .build();
         let thread_tracker = tracker.clone();
         let thread_ctx_tracker = ctx_tracker.clone();
@@ -197,67 +207,63 @@ impl BSProcessTracker {
                             }
                         }
 
-                        let entry = thread_tracker
+                        thread_tracker
                             .entry(event.pid)
                             .and_upsert_with(|loc| {
                                 event_tracker += 1;
                                 let elapsed = event_tracker_timer.elapsed().as_secs();
                                 if elapsed >= 60 {
-                                    info!("Events Per Second: {}", event_tracker / elapsed);
+                                    info!(target: "event", "Events Per Second: {}", event_tracker / elapsed);
                                     event_tracker = 0;
                                     event_tracker_timer = Instant::now();
                                 }
 
                                 let entry = match loc {
                                     Some(entry) => {
+                                        let mut new_info = false;
                                         let mut arc_e = entry.into_value();
                                         let e = Arc::<BSProcess>::make_mut(&mut arc_e);
-                                        match event.class {
-                                            BShieldEventClass::Tracepoint => {
-                                                e.p_path = utils::str_from_buf_nul(&event.p_path)
-                                                    .unwrap_or("")
-                                                    .to_string();
 
-                                                e.path = utils::str_from_buf_nul(&event.path)
-                                                    .unwrap_or("")
-                                                    .to_string();
-
-                                                if e.argv.is_empty() && !event.argv.is_empty() {
-                                                    e.argv = BSProcessTracker::process_argv(&event);
-                                                }
+                                        if e.argv.is_empty() && !event.argv.is_empty() {
+                                            new_info = true;
+                                            e.argv = BSProcessTracker::process_argv(&event);
                                                 // If first argument is the command, remove it
-                                                if !e.argv.is_empty() {
-                                                    if e.path.ends_with(&e.argv[0]) {
-                                                        e.argv.remove(0);
-                                                    }
-                                                }
-                                            }
-                                            BShieldEventClass::BtfTracepoint => {
-                                                if matches!(e.ppid, None) {
-                                                    e.ppid = event.ppid;
-                                                }
-                                            }
-                                            BShieldEventClass::Lsm => {
-                                                if matches!(e.ppid, None) {
-                                                    e.ppid = event.ppid;
+                                            if !e.argv.is_empty() {
+                                                if e.path.ends_with(&e.argv[0]) {
+                                                    e.argv.remove(0);
                                                 }
                                             }
                                         }
-                                        match event.event_type {
-                                            BShieldEventType::Listen => {
-                                                if event.protocol > 0 {
-                                                    e.proto_port.push({
-                                                        BSProtoPort {
-                                                            proto: event.protocol,
-                                                            port: event.port,
-                                                        }
-                                                    });
+                                        if matches!(e.ppid, None) && event.ppid.is_none() {
+                                            new_info = true;
+                                            e.ppid = event.ppid;
+                                        }
+
+                                        if e.path.is_empty() && event.path[0] > 0 {
+                                            new_info = true;
+                                            e.path = utils::str_from_buf_nul(&event.path)
+                                                .unwrap_or("")
+                                                .to_string();
+                                        }
+
+                                        if e.p_path.is_empty() && event.p_path[0] > 0 {
+                                            new_info = true;
+                                            e.p_path = utils::str_from_buf_nul(&event.p_path)
+                                                .unwrap_or("")
+                                                .to_string();
+                                        }
+                                        if event.protocol > 0 {
+                                            new_info = true;
+                                            e.proto_port.push({
+                                                BSProtoPort {
+                                                    proto: event.protocol,
+                                                    port: event.port,
                                                 }
-                                            }
-                                            _ => (),
-                                        };
+                                            });
+                                        }
                                         for id in event.rule_hits.iter() {
                                             if *id != 0 && !e.rule_hits.contains(id) {
+                                                new_info = true;
                                                 e.rule_hits.push(*id);
                                             }
                                         }
@@ -274,25 +280,28 @@ impl BSProcessTracker {
                                                     break;
                                                 }
                                                 if !e.context.contains(&l) {
+
                                                     e.context.push(l);
                                                 }
                                             }
                                         }
                                         // We could have multiple events for a single command, so emit log only if we have rule matches
                                         // Otherwise we delay logging, and clean it up every few seconds
+                                        // Of course alerts should be sent up right away even if we don't have all the data yet
                                         if let Ok(log_r) = log_rules.check_rules(&event) {
-                                            if !e.rule_hits.is_empty() {
-                                                if !log_r.ignore {
-                                                    if matches!(e.action, BShieldAction::Block)
-                                                        || log_r.alert
-                                                    {
-                                                        e.emit_log_entry("alert");
-                                                    } else if log_r.log {
-                                                        e.emit_log_entry("event");
-                                                    }
+                                            if !log_r.ignore {
+                                                if matches!(e.action, BShieldAction::Block)
+                                                    || log_r.alert
+                                                {
+                                                    debug!(
+                                                        "Alert: {:?}, Action: {:?}, path: {}, event_pid: {}",
+                                                        log_r, e.action, e.path, e.pid
+                                                    );
+
+                                                    e.emit_log_entry("alert", &event, new_info);
+                                                } else if log_r.log {
+                                                    e.emit_log_entry("event", &event, new_info);
                                                 }
-                                            } else {
-                                                e.delayed_logging = true;
                                             }
                                         }
 
@@ -326,7 +335,6 @@ impl BSProcessTracker {
                                             context: Vec::new(),
                                             argv: BSProcessTracker::process_argv(&event),
                                             logged: false,
-                                            delayed_logging: false,
                                         };
                                         // If first argument is the command, remove it
                                         if !e.argv.is_empty() {
@@ -361,19 +369,21 @@ impl BSProcessTracker {
 
                                         // We could have multiple events for a single command, so emit log only if we have rule matches
                                         // Otherwise we delay logging, and clean it up every few seconds
+                                        // Of course alerts should be sent up right away even if we don't have all the data yet
                                         if let Ok(log_r) = log_rules.check_rules(&event) {
-                                            if !e.rule_hits.is_empty() {
-                                                if !log_r.ignore {
-                                                    if matches!(e.action, BShieldAction::Block)
-                                                        || log_r.alert
-                                                    {
-                                                        e.emit_log_entry("alert");
-                                                    } else if log_r.log {
-                                                        e.emit_log_entry("event");
-                                                    }
+                                            if !log_r.ignore {
+                                                if matches!(e.action, BShieldAction::Block)
+                                                    || log_r.alert
+                                                {
+                                                    debug!(
+                                                        "Alert: ?{:?}, Action: {:?}, path: {}, event_pid: {}",
+                                                        log_r, e.action, e.path, e.pid
+                                                    );
+
+                                                    e.emit_log_entry("alert", &event, false);
+                                                } else if log_r.log {
+                                                    e.emit_log_entry("event", &event, false);
                                                 }
-                                            } else {
-                                                e.delayed_logging = true;
                                             }
                                         }
 

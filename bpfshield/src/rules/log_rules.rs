@@ -1,9 +1,9 @@
 use super::get_field;
 use crate::utils::get_hash;
 use crate::BSError;
-use aho_corasick::{AhoCorasick, PatternID};
+use aho_corasick::AhoCorasick;
 use bpfshield_common::BShieldEvent;
-use bpfshield_common::{rules::*, BShieldAction, BShieldEventType};
+use bpfshield_common::{rules::*, BShieldEventType};
 use config::{Config, File, FileFormat};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -12,7 +12,7 @@ use tracing::debug;
 
 #[derive(Debug)]
 enum LogVar {
-    Number(i64),
+    Numbers(Vec<i64>),
     String((Vec<String>, AhoCorasick)),
 }
 
@@ -75,9 +75,39 @@ impl BShieldRuleEngine {
         Ok(false)
     }
 
+    fn check_int_var(
+        &self,
+        cmd: &BShieldRuleCommand,
+        left: &LogVar,
+        right: i64,
+    ) -> Result<bool, anyhow::Error> {
+        let r = match left {
+            LogVar::Numbers(ns) => {
+                let mut matched = false;
+                for n in ns {
+                    if *n == right {
+                        matched = true;
+                        break;
+                    }
+                }
+                match *cmd {
+                    BShieldRuleCommand::Eq => matched,
+                    BShieldRuleCommand::Neq => !matched,
+                    _ => false,
+                }
+            }
+            _ => false,
+        };
+        Ok(r)
+    }
+
     fn check_op(&self, op: &LogOp, e: &BShieldEvent) -> Result<bool, anyhow::Error> {
         let mut result = match op.target {
             BShieldRuleTarget::Path => self.check_str_var(&op.command, &op.var, &e.path)?,
+            BShieldRuleTarget::Port => self.check_int_var(&op.command, &op.var, e.port as i64)?,
+            BShieldRuleTarget::IpProto => {
+                self.check_int_var(&op.command, &op.var, e.protocol as i64)?
+            }
             BShieldRuleTarget::Context => {
                 if let LogVar::String((patterns, _)) = &op.var {
                     let pats: Vec<i64> = patterns.iter().map(|s| get_hash(s) as i64).collect();
@@ -133,9 +163,21 @@ impl BShieldRuleEngine {
         );
         let key = self.get_op_key(&e.log_class, &e.event_type);
         log_result.ignore = self.check_map(key, &self.ignore, e)?;
+        if log_result.ignore {
+            return Ok(log_result);
+        }
+
         log_result.log = self.check_map(key, &self.log, e)?;
         log_result.alert = self.check_map(key, &self.alert, e)?;
 
+        debug!(
+            "Class: {:?}, Et: {:?}, Path: {}, pid: {}, result: {:?}",
+            &e.log_class,
+            &e.event_type,
+            bpfshield_common::utils::str_from_buf_nul(&e.path)?,
+            e.pid,
+            log_result
+        );
         Ok(log_result)
     }
 
@@ -172,8 +214,8 @@ impl BShieldRuleEngine {
                     }
 
                     let var = match v {
-                        Value::Number(n) => LogVar::Number(match n.as_i64() {
-                            Some(n) => n,
+                        Value::Number(n) => LogVar::Numbers(match n.as_i64() {
+                            Some(n) => vec![n],
                             None => {
                                 return Err(BSError::InvalidAttribute {
                                     attribute: "var not compatible with i64",
@@ -189,13 +231,16 @@ impl BShieldRuleEngine {
                                 .build([s])?,
                         )),
                         Value::Array(a) => {
-                            let mut vars = Vec::new();
+                            let mut str_vars = Vec::new();
+                            let mut int_vars = Vec::new();
                             for vs in a {
                                 if let Some(s) = vs.as_str() {
-                                    vars.push(s.to_string());
+                                    str_vars.push(s.to_string());
+                                } else if let Some(n) = vs.as_i64() {
+                                    int_vars.push(n);
                                 } else {
                                     return Err(BSError::InvalidAttribute {
-                                        attribute: "var not a string",
+                                        attribute: "var not an int or a string",
                                         value: v.to_string(),
                                     }
                                     .into());
@@ -203,7 +248,7 @@ impl BShieldRuleEngine {
                             }
 
                             if matches!(target, BShieldRuleTarget::Context) {
-                                for v in &vars {
+                                for v in &str_vars {
                                     if !labels.contains_key(v.as_str()) {
                                         return Err(BSError::InvalidAttribute {
                                             attribute: "context",
@@ -214,10 +259,20 @@ impl BShieldRuleEngine {
                                 }
                             }
 
-                            let ac = AhoCorasick::builder()
-                                .ascii_case_insensitive(true)
-                                .build(&vars)?;
-                            LogVar::String((vars, ac))
+                            if !str_vars.is_empty() {
+                                let ac = AhoCorasick::builder()
+                                    .ascii_case_insensitive(true)
+                                    .build(&str_vars)?;
+                                LogVar::String((str_vars, ac))
+                            } else if !int_vars.is_empty() {
+                                LogVar::Numbers(int_vars)
+                            } else {
+                                return Err(BSError::InvalidAttributeType {
+                                    attribute: "invalid array",
+                                    value: v.to_string(),
+                                }
+                                .into());
+                            }
                         }
                         _ => {
                             return Err(BSError::InvalidAttribute {
@@ -345,6 +400,7 @@ mod tests {
         BShieldEvent {
             class: BShieldEventClass::Tracepoint,
             event_type: BShieldEventType::Open,
+            log_class: BShieldRuleClass::File,
             ppid: None,
             tgid: 1212,
             pid: 1212,
@@ -508,10 +564,8 @@ mod tests {
         e.event_type = BShieldEventType::Open;
         e.labels[0] = 6027998744940314019;
 
-        let result = re.check_rules(&BShieldRuleClass::File, &e).unwrap();
+        let result = re.check_rules(&e).unwrap();
         assert!(result.log);
-
-        // println!("Result: {:?}", result);
     }
     #[test]
     fn check_rule_bad_context() {
@@ -555,5 +609,107 @@ mod tests {
         } else {
             panic!("Expected an error");
         }
+    }
+    #[test]
+    fn check_alert_rules() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+        "ignore": [
+        ],
+        "log":  [
+        ],
+        "alert": [{
+            "class": "file",
+            "event": "exec",
+            "directives": {
+                "path": {
+                    "starts_with": [
+                        "/usr/bin/sudo",
+                    ]
+                }
+            }
+        },
+        {
+            "class": "file",
+            "event": "open",
+            "directives": {
+                "path": {
+                    "starts_with": [
+                        "/etc/shadow",
+                        "/proc/sys",
+                        "/usr/bin/sudo"
+                ]
+            }
+        }
+        }]});
+
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+
+        let re = BShieldRuleEngine::load_rules(&labels, rules_obj).unwrap();
+
+        let mut e = construct_event();
+        let path = "/etc/shadow";
+        for (i, ch) in path.as_bytes().into_iter().enumerate() {
+            if i < e.path.len() {
+                e.path[i] = *ch;
+            }
+        }
+        e.event_type = BShieldEventType::Open;
+        e.labels[0] = 6027998744940314019;
+
+        let result = re.check_rules(&e).unwrap();
+        assert!(result.alert);
+    }
+
+    #[test]
+    fn check_empty_dir() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+        "ignore": [
+        ],
+        "log":  [
+        ],
+        "alert": [{
+            "class": "file",
+            "event": "exec",
+            "directives": {
+            }
+        }]});
+
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+
+        let re = BShieldRuleEngine::load_rules(&labels, rules_obj).unwrap();
+
+        let mut e = construct_event();
+        let path = "/usr/bin/ls";
+        for (i, ch) in path.as_bytes().into_iter().enumerate() {
+            if i < e.path.len() {
+                e.path[i] = *ch;
+            }
+        }
+        e.event_type = BShieldEventType::Exec;
+        e.labels[0] = 6027998744940314019;
+
+        let result = re.check_rules(&e).unwrap();
+
+        assert!(result.alert);
     }
 }

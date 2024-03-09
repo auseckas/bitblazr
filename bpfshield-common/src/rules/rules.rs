@@ -208,10 +208,12 @@ pub struct BShieldRulesKey {
 
 #[cfg(feature = "user")]
 mod maps {
+    use crate::models::BShieldArch;
     use crate::rules::{BShieldOp, BShieldRule, BShieldRulesKey, BShieldVar};
     use aya::Pod;
     unsafe impl Pod for BShieldRule {}
     unsafe impl Pod for BShieldRulesKey {}
     unsafe impl Pod for BShieldOp {}
     unsafe impl Pod for BShieldVar {}
+    unsafe impl Pod for BShieldArch {}
 }

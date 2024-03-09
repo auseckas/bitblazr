@@ -1,4 +1,4 @@
-use aya_bpf::BpfContext;
+use aya_bpf::{cty::c_char, BpfContext};
 
 use aya_bpf::bindings::sockaddr;
 use aya_bpf::helpers::{
@@ -562,12 +562,12 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
     let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
 
     process_lsm(&ctx, be)?;
-    be.event_type = BShieldEventType::Exec;
+    be.event_type = BShieldEventType::Open;
 
     let path_len = unsafe {
         bpf_d_path(
             p as *mut path,
-            be.path.as_mut_ptr() as *mut i8,
+            be.path.as_mut_ptr() as *mut c_char,
             be.path.len() as u32,
         )
     } as usize;
@@ -600,8 +600,13 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
     be.rule_hits = rh.hits;
     be.action = rh.action;
 
-    unsafe {
-        // LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+    if matches!(be.action, BShieldAction::Block)
+        || be.path.starts_with(b"/proc/sys")
+        || be.path.starts_with(b"/etc")
+    {
+        unsafe {
+            LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+        }
     }
 
     if matches!(be.action, BShieldAction::Block) {

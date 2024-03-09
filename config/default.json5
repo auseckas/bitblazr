@@ -23,6 +23,7 @@
             rotation: "hourly",
             max_files: 5
         }
+
     },
     // Definitions used in context detection
     process_labels: {

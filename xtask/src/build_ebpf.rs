@@ -70,5 +70,6 @@ fn build_probe(path: &str, opts: &Options) -> Result<(), anyhow::Error> {
 
 pub fn build_ebpf(opts: Options) -> Result<(), anyhow::Error> {
     build_probe("probes/tracepoints-ebpf", &opts)?;
-    build_probe("probes/lsm-ebpf", &opts)
+    build_probe("probes/lsm-ebpf", &opts)?;
+    build_probe("probes/kprobes-ebpf", &opts)
 }

@@ -16,7 +16,21 @@ log:  [
             path: { 
                 starts_with: [ 
                     '/usr/bin',
-                    '/usr/sbin'
+                    '/usr/sbin',
+                    '/usr/local/bin',
+                    '/usr/local/sbin',
+                ]
+            }
+        }
+    },
+    {
+        class: 'file',
+        event: 'open',
+        directives: {
+            path: { 
+                starts_with: [ 
+                    '/etc/passwd',
+                    '/sys'
                 ]
             }
         }
@@ -24,5 +38,38 @@ log:  [
 ],
 
 alert: [
+    {
+        class: 'file',
+        event: 'exec',
+        directives: {
+            path: { 
+                starts_with: [ 
+                    '/usr/bin/sudo',
+                ]
+            }
+        }
+    },
+    {
+        class: 'socket',
+        event: 'listen',
+        directives: {
+            port: { 
+                neq: [ 80, 443 ]
+            }
+        }
+    },
+    {
+        class: 'file',
+        event: 'open',
+        directives: {
+            path: { 
+                starts_with: [ 
+                    '/etc/shadow',
+                    '/proc/sys',
+                    '/usr/bin/sudo'
+                ]
+            }
+        }
+    }
 
 ]}

@@ -1,5 +1,4 @@
 use super::Probe;
-use crate::probes::lsm;
 use crate::probes::PsLabels;
 use crate::rules;
 use crate::BSError;
@@ -53,7 +52,7 @@ impl LsmTracepoints {
                     let events = lsm_buf.read_events(&mut buffer).await?;
 
                     if events.lost > 0 {
-                        warn!("Events lost in LSM_BUFFER: {}", events.lost);
+                        error!(target: "error", "Events lost in LSM_BUFFER: {}", events.lost);
                     }
 
                     for buf in buffer.iter_mut().take(events.read) {

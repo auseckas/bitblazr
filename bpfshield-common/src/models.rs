@@ -10,6 +10,29 @@ pub enum BShieldEventClass {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
+pub enum BShieldArch {
+    Undefined = -1,
+    X86_64 = 0,
+    Aarch64 = 1,
+}
+
+impl BShieldRuleVar for BShieldArch {
+    fn from_str(s: &mut str) -> Self {
+        s.make_ascii_lowercase();
+        match s.trim() {
+            "x86_64" => BShieldArch::X86_64,
+            "aarch64" => BShieldArch::Aarch64,
+            _ => BShieldArch::Undefined,
+        }
+    }
+
+    fn is_undefined(&self) -> bool {
+        matches!(self, BShieldArch::Undefined)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
 pub enum BShieldEventType {
     Undefined = -1,
     Exec = 0,

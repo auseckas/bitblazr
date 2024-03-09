@@ -9,7 +9,6 @@ use std::env;
 fn value_to_var(
     comm: &BShieldRuleCommand,
     target: &BShieldRuleTarget,
-    labels: &HashMap<String, i64>,
     src: &mut Value,
 ) -> Result<BShieldVar, anyhow::Error> {
     let var = match *target {
@@ -212,7 +211,7 @@ fn parse_ops(
                         continue;
                     }
 
-                    let var = value_to_var(&comm, target, labels, v)?;
+                    let var = value_to_var(&comm, target, v)?;
 
                     let op = BShieldOp {
                         target: *target,

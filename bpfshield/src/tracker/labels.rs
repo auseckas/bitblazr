@@ -2,9 +2,7 @@ use crate::config::ShieldConfig;
 use crate::errors::BSError;
 use crate::utils::get_hash;
 use aho_corasick::AhoCorasick;
-use moka::future::Cache;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy)]
 enum ContextOp {

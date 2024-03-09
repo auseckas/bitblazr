@@ -1,4 +1,5 @@
 pub mod btftracepoints;
+pub mod kprobes;
 pub mod lsm;
 pub mod tracepoints;
 

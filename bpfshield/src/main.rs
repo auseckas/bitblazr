@@ -21,8 +21,10 @@ use tracker::labels::ContextTracker;
 use crate::probes::PsLabels;
 use errors::BSError;
 use logs::BShieldLogs;
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 struct TestWriter;
 
@@ -68,31 +70,64 @@ async fn main() -> Result<(), anyhow::Error> {
     #[cfg(not(debug_assertions))]
     let mut bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/release/tracepoints")?;
 
-    bpf_loader.attach(
-        &mut bpf,
-        bpf_context.clone(),
-        vec![
-            Box::new(probes::tracepoints::Tracepoints::new()),
-            Box::new(probes::btftracepoints::BtfTracepoints::new()),
-        ],
-    )?;
+    if Path::new("/sys/kernel/btf/vmlinux").exists() {
+        // bpf_loader.attach(
+        //     &mut bpf,
+        //     bpf_context.clone(),
+        //     vec![Box::new(probes::tracepoints::Tracepoints::new())],
+        // )?;
+        bpf_loader.attach(
+            &mut bpf,
+            bpf_context.clone(),
+            vec![Box::new(probes::btftracepoints::BtfTracepoints::new())],
+        )?;
+    } else {
+        error!(target: "error", "Syscalls FS directory missing. Attempting to fall back to Kprobes");
+        bpf_loader.attach(
+            &mut bpf,
+            bpf_context.clone(),
+            vec![Box::new(probes::tracepoints::Tracepoints::new())],
+        )?;
 
-    #[cfg(debug_assertions)]
-    let mut lsm_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/lsm")?;
-    #[cfg(not(debug_assertions))]
-    let mut lsm_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/release/lsm")?;
+        #[cfg(debug_assertions)]
+        let mut kp_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/kprobes")?;
+        #[cfg(not(debug_assertions))]
+        let mut kp_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/release/kprobes")?;
 
-    let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
+        bpf_loader.attach(
+            &mut kp_bpf,
+            bpf_context.clone(),
+            vec![Box::new(probes::kprobes::BShielProbes::new())],
+        )?;
+    }
 
-    bpf_loader.attach(
-        &mut lsm_bpf,
-        bpf_context.clone(),
-        vec![Box::new(probes::lsm::LsmTracepoints::new(
-            labels_snd.clone(),
-        ))],
-    )?;
+    let lsm_file = match fs::read_to_string("/sys/kernel/security/lsm") {
+        Ok(s) => s,
+        Err(_) => {
+            error!(target: "error", "Cannot read '/sys/kernel/security/lsm' file, make sure the process is running with root privileges.");
+            String::new()
+        }
+    };
 
-    probes::lsm::LsmTracepoints::run_labels_loop(lsm_bpf, labels_recv);
+    if lsm_file.contains("bpf") {
+        #[cfg(debug_assertions)]
+        let mut lsm_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/lsm")?;
+        #[cfg(not(debug_assertions))]
+        let mut lsm_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/release/lsm")?;
+
+        let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
+
+        bpf_loader.attach(
+            &mut lsm_bpf,
+            bpf_context.clone(),
+            vec![Box::new(probes::lsm::LsmTracepoints::new(
+                labels_snd.clone(),
+            ))],
+        )?;
+        probes::lsm::LsmTracepoints::run_labels_loop(lsm_bpf, labels_recv);
+    } else {
+        error!(target: "error", "LSM bpf extension is not enabled. Skipping LSM modules");
+    }
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
