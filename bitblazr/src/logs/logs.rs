@@ -56,11 +56,11 @@ macro_rules! parse_layer {
     }};
 }
 
-pub struct BShieldLogs {
+pub struct BlazrLogs {
     _guards: Vec<WorkerGuard>,
 }
 
-impl BShieldLogs {
+impl BlazrLogs {
     fn parse_log_entry(
         entry: &ShieldLogEntry,
     ) -> Result<(NonBlocking, WorkerGuard), anyhow::Error> {
@@ -126,14 +126,14 @@ impl BShieldLogs {
         }
     }
 
-    pub fn new(config: &ShieldConfig) -> Result<BShieldLogs, anyhow::Error> {
+    pub fn new(config: &ShieldConfig) -> Result<BlazrLogs, anyhow::Error> {
         let logs_conf = &config.logs;
 
         let mut layers = Vec::new();
         let mut guards = Vec::new();
 
         if logs_conf.default.enable {
-            let (w, guard) = BShieldLogs::parse_log_entry(&logs_conf.default)?;
+            let (w, guard) = BlazrLogs::parse_log_entry(&logs_conf.default)?;
             guards.push(guard);
 
             let mut filters = Vec::new();
@@ -153,7 +153,7 @@ impl BShieldLogs {
 
         if let Some(ref e) = logs_conf.errors {
             if e.enable {
-                let (w, guard) = BShieldLogs::parse_log_entry(&e)?;
+                let (w, guard) = BlazrLogs::parse_log_entry(&e)?;
                 guards.push(guard);
 
                 let f = filter::filter_fn(|metadata| metadata.target() == "error");
@@ -163,7 +163,7 @@ impl BShieldLogs {
 
         if let Some(ref e) = logs_conf.events {
             if e.enable {
-                let (w, guard) = BShieldLogs::parse_log_entry(&e)?;
+                let (w, guard) = BlazrLogs::parse_log_entry(&e)?;
                 guards.push(guard);
                 let f = filter::filter_fn(|metadata| metadata.target() == "event");
                 parse_layer!(layers, w, &e.format, Some(f));
@@ -172,7 +172,7 @@ impl BShieldLogs {
 
         if let Some(ref e) = logs_conf.alerts {
             if e.enable {
-                let (w, guard) = BShieldLogs::parse_log_entry(&e)?;
+                let (w, guard) = BlazrLogs::parse_log_entry(&e)?;
                 guards.push(guard);
 
                 let f = filter::filter_fn(|metadata| metadata.target() == "alert");
@@ -185,6 +185,6 @@ impl BShieldLogs {
             .with(EnvFilter::from_default_env())
             .init();
 
-        Ok(BShieldLogs { _guards: guards })
+        Ok(BlazrLogs { _guards: guards })
     }
 }

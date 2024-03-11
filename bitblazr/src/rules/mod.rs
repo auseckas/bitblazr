@@ -5,10 +5,10 @@ pub mod log_rules;
 pub(crate) use log_rules::load_rules_from_config as load_log_rules;
 
 use crate::BSError;
-use bpfshield_common::rules::BShieldRuleVar;
+use bitblazr_common::rules::BlazrRuleVar;
 use serde_json::Value;
 
-fn get_field<T: BShieldRuleVar>(src: &mut Value, f: &str) -> Result<T, anyhow::Error> {
+fn get_field<T: BlazrRuleVar>(src: &mut Value, f: &str) -> Result<T, anyhow::Error> {
     let mut class_str = src
         .get_mut(f)
         .and_then(|c| c.as_str())

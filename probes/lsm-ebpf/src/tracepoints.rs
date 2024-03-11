@@ -12,10 +12,10 @@ use crate::vmlinux::{file, linux_binprm, path as lnx_path, socket, task_struct};
 
 use aya_bpf::bindings::path;
 
-use bpfshield_common::{
-    rules::BShieldIpType, rules::BShieldOp, rules::BShieldRule, rules::BShieldRuleClass,
-    rules::BShieldRuleCommand, rules::BShieldRuleTarget, rules::BShieldRulesKey, rules::BShieldVar,
-    BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType, OPS_PER_RULE, RULES_PER_KEY,
+use bitblazr_common::{
+    rules::BlazrIpType, rules::BlazrOp, rules::BlazrRule, rules::BlazrRuleClass,
+    rules::BlazrRuleCommand, rules::BlazrRuleTarget, rules::BlazrRulesKey, rules::BlazrVar,
+    BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType, OPS_PER_RULE, RULES_PER_KEY,
 };
 use no_std_net::{Ipv4Addr, Ipv6Addr};
 
@@ -23,17 +23,17 @@ use no_std_net::{Ipv4Addr, Ipv6Addr};
 pub static mut LSM_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
 
 #[map]
-pub(crate) static mut LSM_RULES: HashMap<BShieldRulesKey, [BShieldRule; RULES_PER_KEY]> =
+pub(crate) static mut LSM_RULES: HashMap<BlazrRulesKey, [BlazrRule; RULES_PER_KEY]> =
     HashMap::with_max_entries(100, 0);
 
 #[map]
-pub(crate) static mut LSM_RULE_OPS: Array<BShieldOp> = Array::with_max_entries(1000, 0);
+pub(crate) static mut LSM_RULE_OPS: Array<BlazrOp> = Array::with_max_entries(1000, 0);
 
 #[map]
 pub(crate) static mut LSM_CTX_LABELS: HashMap<u32, [i64; 5]> = HashMap::with_max_entries(10_000, 0);
 
 #[map]
-static mut LOCAL_BUFFER_LSM: PerCpuArray<BShieldEvent> = PerCpuArray::with_max_entries(1, 0);
+static mut LOCAL_BUFFER_LSM: PerCpuArray<BlazrEvent> = PerCpuArray::with_max_entries(1, 0);
 
 #[map]
 static mut LOCAL_CTX_RESULTS: PerCpuHashMap<u16, bool> =
@@ -57,10 +57,10 @@ struct RuleVars<'a> {
 
 struct RuleResult {
     hits: [u16; 5],
-    action: BShieldAction,
+    action: BlazrAction,
 }
 
-fn process_lsm(ctx: &LsmContext, be: &mut BShieldEvent) -> Result<(), i32> {
+fn process_lsm(ctx: &LsmContext, be: &mut BlazrEvent) -> Result<(), i32> {
     debug!(ctx, "lsm tracepoint called");
 
     let task: *const task_struct = unsafe { bpf_get_current_task() as *const _ };
@@ -72,7 +72,7 @@ fn process_lsm(ctx: &LsmContext, be: &mut BShieldEvent) -> Result<(), i32> {
         bpf_probe_read_kernel_str_bytes(p_comm.as_mut_ptr(), &mut be.p_path).map_err(|_| 0i32)?
     };
 
-    be.class = BShieldEventClass::Lsm;
+    be.class = BlazrEventClass::Lsm;
     be.ppid = Some(ppid as u32);
     be.tgid = ctx.tgid();
     be.pid = ctx.pid();
@@ -80,7 +80,7 @@ fn process_lsm(ctx: &LsmContext, be: &mut BShieldEvent) -> Result<(), i32> {
     be.gid = ctx.gid();
     be.protocol = 0;
     be.port = 0;
-    be.action = BShieldAction::Allow;
+    be.action = BlazrAction::Allow;
     be.path_len = 0;
 
     Ok(())
@@ -108,7 +108,7 @@ struct sockaddr_in6 {
 const AF_INET: u16 = 2;
 const AF_INET6: u16 = 10;
 
-fn buf_eq(haystack: &[u8], needle_var: &BShieldVar) -> bool {
+fn buf_eq(haystack: &[u8], needle_var: &BlazrVar) -> bool {
     let n_len = needle_var.sbuf_len as usize;
     if n_len < 25 {
         let needle = &needle_var.sbuf[0..n_len];
@@ -118,7 +118,7 @@ fn buf_eq(haystack: &[u8], needle_var: &BShieldVar) -> bool {
     }
 }
 
-fn buf_starts_with(haystack: &[u8], needle_var: &BShieldVar) -> bool {
+fn buf_starts_with(haystack: &[u8], needle_var: &BlazrVar) -> bool {
     let n_len = needle_var.sbuf_len as usize;
     if n_len < 25 {
         let needle = &needle_var.sbuf[0..n_len];
@@ -128,7 +128,7 @@ fn buf_starts_with(haystack: &[u8], needle_var: &BShieldVar) -> bool {
     }
 }
 
-fn buf_ends_with(haystack: &[u8], needle_var: &BShieldVar) -> bool {
+fn buf_ends_with(haystack: &[u8], needle_var: &BlazrVar) -> bool {
     if needle_var.sbuf_len == 0 {
         return false;
     }
@@ -152,10 +152,10 @@ fn buf_ends_with(haystack: &[u8], needle_var: &BShieldVar) -> bool {
     true
 }
 
-fn process_labels(_ctx: &LsmContext, key: &BShieldRulesKey, ppid: u32) -> Result<(), i32> {
+fn process_labels(_ctx: &LsmContext, key: &BlazrRulesKey, ppid: u32) -> Result<(), i32> {
     if let Some(rules) = unsafe { LSM_RULES.get(key) } {
         for rule in rules {
-            if matches!(rule.class, BShieldRuleClass::Undefined) {
+            if matches!(rule.class, BlazrRuleClass::Undefined) {
                 break;
             }
 
@@ -189,7 +189,7 @@ struct OpTracker {
 
 type OpTrackers = [OpTracker; RULES_PER_KEY * OPS_PER_RULE];
 
-fn prime_ops(_ctx: &LsmContext, key: &BShieldRulesKey) -> Result<(), i32> {
+fn prime_ops(_ctx: &LsmContext, key: &BlazrRulesKey) -> Result<(), i32> {
     let buf_ptr = unsafe { LOCAL_OPS.get_ptr_mut(0).ok_or(0i32)? };
     let results: &mut OpTrackers = unsafe { &mut *buf_ptr };
 
@@ -199,7 +199,7 @@ fn prime_ops(_ctx: &LsmContext, key: &BShieldRulesKey) -> Result<(), i32> {
             return Ok(());
         }
         for rule in rules {
-            if matches!(rule.class, BShieldRuleClass::Undefined) {
+            if matches!(rule.class, BlazrRuleClass::Undefined) {
                 break;
             }
             if pos >= RULES_PER_KEY * OPS_PER_RULE - OPS_PER_RULE {
@@ -224,20 +224,20 @@ fn prime_ops(_ctx: &LsmContext, key: &BShieldRulesKey) -> Result<(), i32> {
     Ok(())
 }
 
-fn buf_compare(command: &BShieldRuleCommand, haystack: &[u8], needle_var: &BShieldVar) -> bool {
+fn buf_compare(command: &BlazrRuleCommand, haystack: &[u8], needle_var: &BlazrVar) -> bool {
     match *command {
-        BShieldRuleCommand::Eq => buf_eq(haystack, needle_var),
-        BShieldRuleCommand::Neq => !buf_eq(haystack, needle_var),
-        BShieldRuleCommand::StartsWith => buf_starts_with(haystack, needle_var),
-        BShieldRuleCommand::EndsWith => buf_ends_with(haystack, needle_var),
+        BlazrRuleCommand::Eq => buf_eq(haystack, needle_var),
+        BlazrRuleCommand::Neq => !buf_eq(haystack, needle_var),
+        BlazrRuleCommand::StartsWith => buf_starts_with(haystack, needle_var),
+        BlazrRuleCommand::EndsWith => buf_ends_with(haystack, needle_var),
         _ => false,
     }
 }
 
-fn int_compare(command: &BShieldRuleCommand, left: i64, right: &BShieldVar) -> bool {
+fn int_compare(command: &BlazrRuleCommand, left: i64, right: &BlazrVar) -> bool {
     match *command {
-        BShieldRuleCommand::Eq => left == right.int,
-        BShieldRuleCommand::Neq => left != right.int,
+        BlazrRuleCommand::Eq => left == right.int,
+        BlazrRuleCommand::Neq => left != right.int,
         _ => false,
     }
 }
@@ -252,49 +252,49 @@ fn process_ops(_ctx: &LsmContext, var: RuleVars) -> Result<(), i32> {
         let op = unsafe { LSM_RULE_OPS.get(op_tracker.op_id as u32).ok_or(0i32)? };
 
         let mut result = match op.target {
-            BShieldRuleTarget::Path => {
+            BlazrRuleTarget::Path => {
                 if var.path.len() == 0 {
                     continue;
                 }
 
                 buf_compare(&op.command, var.path, &op.var)
             }
-            BShieldRuleTarget::Port => {
+            BlazrRuleTarget::Port => {
                 if var.port == 0 {
                     continue;
                 }
                 int_compare(&op.command, var.port, &op.var)
             }
-            BShieldRuleTarget::IpProto => {
+            BlazrRuleTarget::IpProto => {
                 if var.proto == 0 {
                     continue;
                 }
                 int_compare(&op.command, var.proto.into(), &op.var)
             }
-            BShieldRuleTarget::IpVersion => {
+            BlazrRuleTarget::IpVersion => {
                 if var.ip_version == 0 {
                     continue;
                 }
                 int_compare(&op.command, var.ip_version, &op.var)
             }
-            BShieldRuleTarget::IpType => {
+            BlazrRuleTarget::IpType => {
                 let res = match op.var.int {
-                    _ if op.var.int == BShieldIpType::Private as i64 => {
+                    _ if op.var.int == BlazrIpType::Private as i64 => {
                         (var.ip_type >> 24) & 0xFF != 0
                     }
-                    _ if op.var.int == BShieldIpType::Public as i64 => {
+                    _ if op.var.int == BlazrIpType::Public as i64 => {
                         (var.ip_type >> 16) & 0xFF != 0
                     }
-                    _ if op.var.int == BShieldIpType::Loopback as i64 => {
+                    _ if op.var.int == BlazrIpType::Loopback as i64 => {
                         (var.ip_type >> 8) & 0xFF != 0
                     }
-                    _ if op.var.int == BShieldIpType::Multicast as i64 => var.ip_type & 0xFF != 0,
+                    _ if op.var.int == BlazrIpType::Multicast as i64 => var.ip_type & 0xFF != 0,
                     _ => false,
                 };
 
                 match op.command {
-                    BShieldRuleCommand::Eq => res,
-                    BShieldRuleCommand::Neq => !res,
+                    BlazrRuleCommand::Eq => res,
+                    BlazrRuleCommand::Neq => !res,
                     _ => false,
                 }
             }
@@ -316,14 +316,14 @@ fn process_ops(_ctx: &LsmContext, var: RuleVars) -> Result<(), i32> {
     Ok(())
 }
 
-fn finalize(ctx: &LsmContext, key: &BShieldRulesKey) -> Result<RuleResult, i32> {
+fn finalize(ctx: &LsmContext, key: &BlazrRulesKey) -> Result<RuleResult, i32> {
     let mut rule_hits = RuleResult {
         hits: [0; 5],
-        action: BShieldAction::Allow,
+        action: BlazrAction::Allow,
     };
     if let Some(rules) = unsafe { LSM_RULES.get(key) } {
         for rule in rules {
-            if matches!(rule.class, BShieldRuleClass::Undefined) {
+            if matches!(rule.class, BlazrRuleClass::Undefined) {
                 break;
             }
             let mut matched = true;
@@ -353,8 +353,8 @@ fn finalize(ctx: &LsmContext, key: &BShieldRulesKey) -> Result<RuleResult, i32> 
                     }
                 }
                 debug!(ctx, "Matched rule: {}", rule.id);
-                if matches!(rule.action, BShieldAction::Block) {
-                    rule_hits.action = BShieldAction::Block;
+                if matches!(rule.action, BlazrAction::Block) {
+                    rule_hits.action = BlazrAction::Block;
                     break;
                 }
             }
@@ -409,19 +409,19 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
     let sa_family: u16 = unsafe { (*sock_addr).sa_family };
 
     let buf_ptr = unsafe { LOCAL_BUFFER_LSM.get_ptr_mut(0).ok_or(0i32)? };
-    let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
+    let be: &mut BlazrEvent = unsafe { &mut *buf_ptr };
 
     let proto: u16 = unsafe { (*(*socket).sk).sk_protocol };
 
     process_lsm(&ctx, be)?;
-    be.event_type = BShieldEventType::Connect;
+    be.event_type = BlazrEventType::Connect;
 
-    let key = BShieldRulesKey {
-        class: BShieldRuleClass::Socket as i32,
-        event_type: BShieldEventType::Connect as i32,
+    let key = BlazrRulesKey {
+        class: BlazrRuleClass::Socket as i32,
+        event_type: BlazrEventType::Connect as i32,
     };
 
-    be.log_class = BShieldRuleClass::Socket;
+    be.log_class = BlazrRuleClass::Socket;
 
     let ppid = be.ppid.unwrap_or(0) as u32;
 
@@ -492,7 +492,7 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
         LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
-    if matches!(be.action, BShieldAction::Block) {
+    if matches!(be.action, BlazrAction::Block) {
         Ok(-1)
     } else {
         Ok(0)
@@ -503,10 +503,10 @@ fn process_file_exec(ctx: LsmContext) -> Result<i32, i32> {
     let lb: *const linux_binprm = unsafe { ctx.arg(0) };
 
     let buf_ptr = unsafe { LOCAL_BUFFER_LSM.get_ptr_mut(0).ok_or(0i32)? };
-    let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
+    let be: &mut BlazrEvent = unsafe { &mut *buf_ptr };
 
     process_lsm(&ctx, be)?;
-    be.event_type = BShieldEventType::Exec;
+    be.event_type = BlazrEventType::Exec;
 
     let path_len = unsafe {
         bpf_probe_read_kernel_str_bytes((*lb).filename as *const u8, &mut be.path)
@@ -520,13 +520,13 @@ fn process_file_exec(ctx: LsmContext) -> Result<i32, i32> {
         sbuf = &be.path[0..path_len];
     }
 
-    let key = BShieldRulesKey {
-        class: BShieldRuleClass::File as i32,
-        event_type: BShieldEventType::Exec as i32,
+    let key = BlazrRulesKey {
+        class: BlazrRuleClass::File as i32,
+        event_type: BlazrEventType::Exec as i32,
     };
     let ppid = be.ppid.unwrap_or(0) as u32;
 
-    be.log_class = BShieldRuleClass::File;
+    be.log_class = BlazrRuleClass::File;
 
     process_labels(&ctx, &key, ppid)?;
     prime_ops(&ctx, &key)?;
@@ -547,7 +547,7 @@ fn process_file_exec(ctx: LsmContext) -> Result<i32, i32> {
         LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
-    if matches!(be.action, BShieldAction::Block) {
+    if matches!(be.action, BlazrAction::Block) {
         Ok(-1)
     } else {
         Ok(0)
@@ -559,10 +559,10 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
     let p: *const lnx_path = unsafe { &(*f).f_path };
 
     let buf_ptr = unsafe { LOCAL_BUFFER_LSM.get_ptr_mut(0).ok_or(0i32)? };
-    let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
+    let be: &mut BlazrEvent = unsafe { &mut *buf_ptr };
 
     process_lsm(&ctx, be)?;
-    be.event_type = BShieldEventType::Open;
+    be.event_type = BlazrEventType::Open;
 
     let path_len = unsafe {
         bpf_d_path(
@@ -577,11 +577,11 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
         sbuf = &be.path[0..path_len];
     }
 
-    let key = BShieldRulesKey {
-        class: BShieldRuleClass::File as i32,
-        event_type: BShieldEventType::Open as i32,
+    let key = BlazrRulesKey {
+        class: BlazrRuleClass::File as i32,
+        event_type: BlazrEventType::Open as i32,
     };
-    be.log_class = BShieldRuleClass::File;
+    be.log_class = BlazrRuleClass::File;
 
     let ppid = be.ppid.unwrap_or(0) as u32;
 
@@ -600,7 +600,7 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
     be.rule_hits = rh.hits;
     be.action = rh.action;
 
-    if matches!(be.action, BShieldAction::Block)
+    if matches!(be.action, BlazrAction::Block)
         || be.path.starts_with(b"/proc/sys")
         || be.path.starts_with(b"/etc")
     {
@@ -609,7 +609,7 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
         }
     }
 
-    if matches!(be.action, BShieldAction::Block) {
+    if matches!(be.action, BlazrAction::Block) {
         Ok(-1)
     } else {
         Ok(0)
@@ -620,19 +620,19 @@ fn process_socket_listen(ctx: LsmContext) -> Result<i32, i32> {
     let socket: *const socket = unsafe { ctx.arg(0) };
 
     let buf_ptr = unsafe { LOCAL_BUFFER_LSM.get_ptr_mut(0).ok_or(0i32)? };
-    let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
+    let be: &mut BlazrEvent = unsafe { &mut *buf_ptr };
 
     process_lsm(&ctx, be)?;
-    be.event_type = BShieldEventType::Listen;
+    be.event_type = BlazrEventType::Listen;
     be.protocol = unsafe { (*(*socket).sk).sk_protocol };
     let port_pair: u32 = unsafe { (*(*socket).sk).__sk_common.__bindgen_anon_3.skc_portpair };
     be.port = (port_pair >> 16) as u16 & 0xffff;
 
-    let key = BShieldRulesKey {
-        class: BShieldRuleClass::Socket as i32,
-        event_type: BShieldEventType::Listen as i32,
+    let key = BlazrRulesKey {
+        class: BlazrRuleClass::Socket as i32,
+        event_type: BlazrEventType::Listen as i32,
     };
-    be.log_class = BShieldRuleClass::Socket;
+    be.log_class = BlazrRuleClass::Socket;
 
     let ppid = be.ppid.unwrap_or(0) as u32;
 
@@ -655,7 +655,7 @@ fn process_socket_listen(ctx: LsmContext) -> Result<i32, i32> {
         LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
     }
 
-    if matches!(be.action, BShieldAction::Block) {
+    if matches!(be.action, BlazrAction::Block) {
         Ok(-1)
     } else {
         Ok(0)

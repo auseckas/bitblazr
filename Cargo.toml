@@ -1,2 +1,2 @@
 [workspace]
-members = ["xtask", "bpfshield", "bpfshield-common"]
+members = ["xtask", "bitblazr", "bitblazr-common"]

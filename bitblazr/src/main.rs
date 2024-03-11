@@ -20,7 +20,7 @@ use tracker::labels::ContextTracker;
 
 use crate::probes::PsLabels;
 use errors::BSError;
-use logs::BShieldLogs;
+use logs::BlazrLogs;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -53,7 +53,7 @@ async fn main() -> Result<(), anyhow::Error> {
         rlim_max: libc::RLIM_INFINITY,
     };
 
-    let _logs = BShieldLogs::new(&config)?;
+    let _logs = BlazrLogs::new(&config)?;
 
     let ret = unsafe { libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlim) };
     if ret != 0 {
@@ -66,9 +66,11 @@ async fn main() -> Result<(), anyhow::Error> {
     let bpf_loader = EbpfLoader::new(event_loop);
 
     #[cfg(debug_assertions)]
-    let mut bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/tracepoints")?;
+    let mut bpf =
+        Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/bitblazr-tracepoints")?;
     #[cfg(not(debug_assertions))]
-    let mut bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/release/tracepoints")?;
+    let mut bpf =
+        Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-tracepoints")?;
 
     if Path::new("/sys/kernel/btf/vmlinux").exists() {
         // bpf_loader.attach(
@@ -90,9 +92,11 @@ async fn main() -> Result<(), anyhow::Error> {
         )?;
 
         #[cfg(debug_assertions)]
-        let mut kp_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/kprobes")?;
+        let mut kp_bpf =
+            Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/bitblazr-kprobes")?;
         #[cfg(not(debug_assertions))]
-        let mut kp_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/release/kprobes")?;
+        let mut kp_bpf =
+            Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-kprobes")?;
 
         bpf_loader.attach(
             &mut kp_bpf,
@@ -111,9 +115,11 @@ async fn main() -> Result<(), anyhow::Error> {
 
     if lsm_file.contains("bpf") {
         #[cfg(debug_assertions)]
-        let mut lsm_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/lsm")?;
+        let mut lsm_bpf =
+            Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
         #[cfg(not(debug_assertions))]
-        let mut lsm_bpf = Bpf::load_file("../../probes/target/bpfel-unknown-none/release/lsm")?;
+        let mut lsm_bpf =
+            Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-lsm")?;
 
         let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
 

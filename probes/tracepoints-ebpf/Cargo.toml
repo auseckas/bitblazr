@@ -6,10 +6,10 @@ edition = "2021"
 [dependencies]
 aya-bpf = { git = "https://github.com/aya-rs/aya" }
 aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
-bpfshield-common = { path = "../../bpfshield-common" }
+bitblazr-common = { path = "../../bitblazr-common" }
 
 [[bin]]
-name = "tracepoints"
+name = "bitblazr-tracepoints"
 path = "src/main.rs"
 
 [profile.dev]

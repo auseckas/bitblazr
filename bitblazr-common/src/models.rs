@@ -1,8 +1,8 @@
-use crate::rules::{BShieldRuleClass, BShieldRuleVar};
+use crate::rules::{BlazrRuleClass, BlazrRuleVar};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
-pub enum BShieldEventClass {
+pub enum BlazrEventClass {
     Tracepoint = 0,
     BtfTracepoint = 1,
     Lsm = 2,
@@ -10,30 +10,30 @@ pub enum BShieldEventClass {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub enum BShieldArch {
+pub enum BlazrArch {
     Undefined = -1,
     X86_64 = 0,
     Aarch64 = 1,
 }
 
-impl BShieldRuleVar for BShieldArch {
+impl BlazrRuleVar for BlazrArch {
     fn from_str(s: &mut str) -> Self {
         s.make_ascii_lowercase();
         match s.trim() {
-            "x86_64" => BShieldArch::X86_64,
-            "aarch64" => BShieldArch::Aarch64,
-            _ => BShieldArch::Undefined,
+            "x86_64" => BlazrArch::X86_64,
+            "aarch64" => BlazrArch::Aarch64,
+            _ => BlazrArch::Undefined,
         }
     }
 
     fn is_undefined(&self) -> bool {
-        matches!(self, BShieldArch::Undefined)
+        matches!(self, BlazrArch::Undefined)
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub enum BShieldEventType {
+pub enum BlazrEventType {
     Undefined = -1,
     Exec = 0,
     Exit = 1,
@@ -42,27 +42,27 @@ pub enum BShieldEventType {
     Connect = 4,
 }
 
-impl BShieldRuleVar for BShieldEventType {
+impl BlazrRuleVar for BlazrEventType {
     fn from_str(s: &mut str) -> Self {
         s.make_ascii_lowercase();
         match s.trim() {
-            "exec" => BShieldEventType::Exec,
-            "exit" => BShieldEventType::Exit,
-            "open" => BShieldEventType::Open,
-            "listen" => BShieldEventType::Listen,
-            "connect" => BShieldEventType::Connect,
-            _ => BShieldEventType::Undefined,
+            "exec" => BlazrEventType::Exec,
+            "exit" => BlazrEventType::Exit,
+            "open" => BlazrEventType::Open,
+            "listen" => BlazrEventType::Listen,
+            "connect" => BlazrEventType::Connect,
+            _ => BlazrEventType::Undefined,
         }
     }
 
     fn is_undefined(&self) -> bool {
-        matches!(self, BShieldEventType::Undefined)
+        matches!(self, BlazrEventType::Undefined)
     }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(C)]
-pub enum BShieldAction {
+pub enum BlazrAction {
     Undefined = -1,
     Allow = 0,
     Block = 1,
@@ -71,36 +71,36 @@ pub enum BShieldAction {
     Alert = 4,
 }
 
-impl BShieldRuleVar for BShieldAction {
+impl BlazrRuleVar for BlazrAction {
     fn from_str(s: &mut str) -> Self {
         s.make_ascii_lowercase();
         match s.trim() {
-            "allow" => BShieldAction::Allow,
-            "block" => BShieldAction::Block,
-            "ignore" => BShieldAction::Ignore,
-            "log" => BShieldAction::Log,
-            "alert" => BShieldAction::Alert,
-            _ => BShieldAction::Undefined,
+            "allow" => BlazrAction::Allow,
+            "block" => BlazrAction::Block,
+            "ignore" => BlazrAction::Ignore,
+            "log" => BlazrAction::Log,
+            "alert" => BlazrAction::Alert,
+            _ => BlazrAction::Undefined,
         }
     }
 
     fn is_undefined(&self) -> bool {
-        matches!(self, BShieldAction::Undefined)
+        matches!(self, BlazrAction::Undefined)
     }
 }
 
 #[derive(Debug, Clone)]
 #[repr(C)]
-pub struct BShieldEvent {
-    pub class: BShieldEventClass,
-    pub event_type: BShieldEventType,
-    pub log_class: BShieldRuleClass,
+pub struct BlazrEvent {
+    pub class: BlazrEventClass,
+    pub event_type: BlazrEventType,
+    pub log_class: BlazrRuleClass,
     pub ppid: Option<u32>,
     pub tgid: u32,
     pub pid: u32,
     pub uid: u32,
     pub gid: u32,
-    pub action: BShieldAction,
+    pub action: BlazrAction,
     pub protocol: u16,
     pub port: u16,
     pub rule_hits: [u16; 5],
@@ -112,7 +112,7 @@ pub struct BShieldEvent {
     pub argv: [[u8; 200]; crate::ARGV_COUNT],
 }
 
-impl BShieldEvent {
+impl BlazrEvent {
     pub fn to_bytes(&self) -> &[u8] {
         unsafe {
             core::slice::from_raw_parts(

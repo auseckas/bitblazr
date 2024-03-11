@@ -1,13 +1,13 @@
 [package]
-name = "bpfshield"
-version = "0.1.0"
+name = "bitblazr"
+version = "0.2.0"
 edition = "2021"
 publish = false
 
 [dependencies]
 aya = { version = "0.12", features = ["async_tokio"] }
 aya-log = { version = "0.2" }
-bpfshield-common = { path = "../bpfshield-common", features = ["user"] }
+bitblazr-common = { path = "../bitblazr-common", features = ["user"] }
 anyhow = "1"
 libc = "0.2"
 tokio = { version = "1.25", features = ["macros", "rt", "rt-multi-thread", "net", "signal"] }
@@ -27,5 +27,5 @@ tracing-subscriber = { version = "0.3", features = ["std", "env-filter", "json"]
 tracing-appender = "0.2"
 
 [[bin]]
-name = "bpfshield"
+name = "bitblazr"
 path = "src/main.rs"

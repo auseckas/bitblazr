@@ -5,7 +5,7 @@ pub mod tracepoints;
 
 use crate::ContextTracker;
 use aya::Bpf;
-use bpfshield_common::models::BShieldEvent;
+use bitblazr_common::models::BlazrEvent;
 use crossbeam_channel::Sender;
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ pub(crate) trait Probe {
     fn init(
         &self,
         bpf: &mut Bpf,
-        snd: Sender<BShieldEvent>,
+        snd: Sender<BlazrEvent>,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error>;
 }

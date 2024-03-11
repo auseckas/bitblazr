@@ -6,11 +6,11 @@ edition = "2021"
 [dependencies]
 aya-bpf = { git = "https://github.com/aya-rs/aya" }
 aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
-bpfshield-common = { path = "../../bpfshield-common" }
+bitblazr-common = { path = "../../bitblazr-common" }
 no-std-net = "0.6"
 
 [[bin]]
-name = "lsm"
+name = "bitblazr-lsm"
 path = "src/main.rs"
 
 [profile.dev]

@@ -24,11 +24,11 @@ use aya_bpf::maps::PerfEventByteArray;
 use aya_bpf::programs::ProbeContext;
 use aya_bpf::PtRegs;
 use aya_log_ebpf::info;
-use bpfshield_common::rules::BShieldRuleClass;
-use bpfshield_common::{BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType};
+use bitblazr_common::rules::BlazrRuleClass;
+use bitblazr_common::{BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType};
 
 #[map]
-pub(crate) static mut LOCAL_BUFFER: PerCpuArray<BShieldEvent> = PerCpuArray::with_max_entries(1, 0);
+pub(crate) static mut LOCAL_BUFFER: PerCpuArray<BlazrEvent> = PerCpuArray::with_max_entries(1, 0);
 
 #[map]
 pub static mut KPROBE_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
@@ -55,7 +55,7 @@ pub fn bshield_openat(ctx: ProbeContext) -> u32 {
     }
 }
 
-fn process_be(ctx: &ProbeContext, be: &mut BShieldEvent) -> Result<(), i32> {
+fn process_be(ctx: &ProbeContext, be: &mut BlazrEvent) -> Result<(), i32> {
     debug!(ctx, "lsm tracepoint called");
 
     let task: *const task_struct = unsafe { bpf_get_current_task() as *const _ };
@@ -67,7 +67,7 @@ fn process_be(ctx: &ProbeContext, be: &mut BShieldEvent) -> Result<(), i32> {
         bpf_probe_read_kernel_str_bytes(p_comm.as_mut_ptr(), &mut be.p_path).map_err(|_| 0i32)?
     };
 
-    be.class = BShieldEventClass::Lsm;
+    be.class = BlazrEventClass::Lsm;
     be.ppid = Some(ppid as u32);
     be.tgid = ctx.tgid();
     be.pid = ctx.pid();
@@ -75,7 +75,7 @@ fn process_be(ctx: &ProbeContext, be: &mut BShieldEvent) -> Result<(), i32> {
     be.gid = ctx.gid();
     be.protocol = 0;
     be.port = 0;
-    be.action = BShieldAction::Allow;
+    be.action = BlazrAction::Allow;
     be.path_len = 0;
 
     Ok(())
@@ -86,7 +86,7 @@ fn try_open(ctx: ProbeContext, fname_offset: usize) -> Result<u32, i64> {
     let f_name: *const u8 = regs.arg(fname_offset).ok_or(1u32)?;
 
     let buf_ptr = unsafe { LOCAL_BUFFER.get_ptr_mut(0).ok_or(1u32)? };
-    let mut be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
+    let mut be: &mut BlazrEvent = unsafe { &mut *buf_ptr };
     process_be(&ctx, &mut be)?;
 
     // info!(&ctx, "Got here");

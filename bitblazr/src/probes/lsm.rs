@@ -8,10 +8,10 @@ use aya::maps::{Array, HashMap as AyaHashMap, MapData};
 use aya::programs::Lsm;
 use aya::util::online_cpus;
 use aya::{Bpf, Btf};
-use bpfshield_common::models::BShieldEvent;
-use bpfshield_common::rules::{BShieldOp, BShieldRule, BShieldRuleClass, BShieldRulesKey};
-use bpfshield_common::utils;
-use bpfshield_common::{BShieldAction, BShieldEventType, OPS_PER_RULE, RULES_PER_KEY};
+use bitblazr_common::models::BlazrEvent;
+use bitblazr_common::rules::{BlazrOp, BlazrRule, BlazrRuleClass, BlazrRulesKey};
+use bitblazr_common::utils;
+use bitblazr_common::{BlazrAction, BlazrEventType, OPS_PER_RULE, RULES_PER_KEY};
 use bytes::BytesMut;
 use crossbeam_channel;
 use std::collections::HashMap;
@@ -32,7 +32,7 @@ impl LsmTracepoints {
     fn run(
         &self,
         bpf: &mut Bpf,
-        snd: crossbeam_channel::Sender<BShieldEvent>,
+        snd: crossbeam_channel::Sender<BlazrEvent>,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
         let mut tp_array: AsyncPerfEventArray<_> =
@@ -45,7 +45,7 @@ impl LsmTracepoints {
             let th_labels_snd = self.labels_snd.clone();
             tokio::spawn(async move {
                 let mut buffer =
-                    vec![BytesMut::with_capacity(core::mem::size_of::<BShieldEvent>()); 100];
+                    vec![BytesMut::with_capacity(core::mem::size_of::<BlazrEvent>()); 100];
 
                 loop {
                     // wait for events
@@ -56,8 +56,8 @@ impl LsmTracepoints {
                     }
 
                     for buf in buffer.iter_mut().take(events.read) {
-                        let be: &mut BShieldEvent =
-                            unsafe { &mut *(buf.as_ptr() as *mut BShieldEvent) };
+                        let be: &mut BlazrEvent =
+                            unsafe { &mut *(buf.as_ptr() as *mut BlazrEvent) };
 
                         let mut event_ctx = [0i64; 5];
                         let mut ctx = th_ctx_tracker
@@ -134,17 +134,17 @@ impl LsmTracepoints {
         bpf: &mut Bpf,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
-        const RULE_UNDEFINED: BShieldRule = BShieldRule {
+        const RULE_UNDEFINED: BlazrRule = BlazrRule {
             id: 0,
-            class: BShieldRuleClass::Undefined,
-            event: BShieldEventType::Undefined,
+            class: BlazrRuleClass::Undefined,
+            event: BlazrEventType::Undefined,
             context: [0; 5],
             ops: [-1; OPS_PER_RULE],
             ops_len: 0,
-            action: BShieldAction::Undefined,
+            action: BlazrAction::Undefined,
         };
 
-        let mut map_rules: AyaHashMap<&mut MapData, BShieldRulesKey, [BShieldRule; RULES_PER_KEY]> =
+        let mut map_rules: AyaHashMap<&mut MapData, BlazrRulesKey, [BlazrRule; RULES_PER_KEY]> =
             AyaHashMap::try_from(bpf.map_mut("LSM_RULES").unwrap()).unwrap();
 
         let (lsm_rules, shield_ops) = rules::load_kernel_rules("kernel", ctx_tracker.get_labels())?;
@@ -176,7 +176,7 @@ impl LsmTracepoints {
             map_rules.insert(key, rules_buf, 0)?;
         }
 
-        let mut array_rule_ops: Array<&mut MapData, BShieldOp> =
+        let mut array_rule_ops: Array<&mut MapData, BlazrOp> =
             Array::try_from(bpf.map_mut("LSM_RULE_OPS").unwrap()).unwrap();
 
         for (i, op) in shield_ops.into_iter().enumerate() {
@@ -235,7 +235,7 @@ impl Probe for LsmTracepoints {
     fn init(
         &self,
         bpf: &mut Bpf,
-        snd: crossbeam_channel::Sender<BShieldEvent>,
+        snd: crossbeam_channel::Sender<BlazrEvent>,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
         let btf = Btf::from_sys_fs()?;

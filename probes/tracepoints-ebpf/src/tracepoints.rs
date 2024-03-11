@@ -9,9 +9,9 @@ use aya_log_ebpf::{debug, info};
 
 use crate::common::{LOCAL_BUFFER, TP_ARCH, TP_BUFFER};
 // use crate::vmlinux::task_struct;
-use bpfshield_common::models::BShieldArch;
-use bpfshield_common::rules::BShieldRuleClass;
-use bpfshield_common::{BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType};
+use bitblazr_common::models::BlazrArch;
+use bitblazr_common::rules::BlazrRuleClass;
+use bitblazr_common::{BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType};
 
 #[tracepoint]
 pub fn tracepoints(ctx: TracePointContext) -> u32 {
@@ -25,23 +25,23 @@ fn try_tps(ctx: TracePointContext) -> Result<u32, u32> {
     debug!(&ctx, "tracepoint called");
 
     let buf_ptr = unsafe { LOCAL_BUFFER.get_ptr_mut(0).ok_or(1u32)? };
-    let be: &mut BShieldEvent = unsafe { &mut *buf_ptr };
+    let be: &mut BlazrEvent = unsafe { &mut *buf_ptr };
 
-    be.class = BShieldEventClass::Tracepoint;
-    be.event_type = BShieldEventType::Exec;
+    be.class = BlazrEventClass::Tracepoint;
+    be.event_type = BlazrEventType::Exec;
     be.ppid = None;
     be.tgid = ctx.tgid();
     be.pid = ctx.pid();
     be.uid = ctx.uid();
     be.gid = ctx.gid();
-    be.action = BShieldAction::Allow;
-    be.log_class = BShieldRuleClass::File;
+    be.action = BlazrAction::Allow;
+    be.log_class = BlazrRuleClass::File;
 
     let arch = unsafe { TP_ARCH.get(0).ok_or(1u32)? };
 
     let (syscall_id_open, syscall_id_openat) = match arch {
-        BShieldArch::X86_64 => (2, 257),
-        BShieldArch::Aarch64 => (0xffff, 56),
+        BlazrArch::X86_64 => (2, 257),
+        BlazrArch::Aarch64 => (0xffff, 56),
         _ => return Ok(1),
     };
 

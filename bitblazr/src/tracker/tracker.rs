@@ -1,9 +1,9 @@
 use crate::ContextTracker;
 use aya::maps::perf::PerfBufferError;
-use bpfshield_common::{
-    models::{BShieldAction, BShieldEvent, BShieldEventClass},
+use bitblazr_common::{
+    models::{BlazrAction, BlazrEvent, BlazrEventClass},
     utils::{self, str_from_buf_nul},
-    BShieldEventType, ARGV_COUNT,
+    BlazrEventType, ARGV_COUNT,
 };
 use chrono::{DateTime, Utc};
 use std::time::Instant;
@@ -34,7 +34,7 @@ pub struct BSProcess {
     pub p_path: String,
     pub path: String,
     pub proto_port: Vec<BSProtoPort>,
-    pub action: BShieldAction,
+    pub action: BlazrAction,
     pub rule_hits: Vec<u16>,
     pub children: Vec<u32>, // [pid,...]
     pub context: Vec<i64>,
@@ -43,7 +43,7 @@ pub struct BSProcess {
 }
 
 impl BSProcess {
-    pub fn emit_log_entry(&mut self, target: &str, e: &BShieldEvent, new_info: bool) {
+    pub fn emit_log_entry(&mut self, target: &str, e: &BlazrEvent, new_info: bool) {
         let event_path = match str_from_buf_nul(&e.path) {
             Ok(p) => p,
             Err(e) => {
@@ -87,7 +87,7 @@ impl BSProcess {
         }
 
         let path = match e.event_type {
-            BShieldEventType::Exec => self.path.as_str(),
+            BlazrEventType::Exec => self.path.as_str(),
             _ => event_path,
         };
 
@@ -109,19 +109,19 @@ impl BSProcess {
 }
 
 pub struct BSProcessTracker {
-    pub snd: crossbeam_channel::Sender<BShieldEvent>,
+    pub snd: crossbeam_channel::Sender<BlazrEvent>,
 }
 
 impl BSProcessTracker {
     pub fn new(ctx_tracker: Arc<ContextTracker>) -> Result<BSProcessTracker, anyhow::Error> {
-        let (snd, recv) = crossbeam_channel::bounded::<BShieldEvent>(100_000);
+        let (snd, recv) = crossbeam_channel::bounded::<BlazrEvent>(100_000);
 
         let bes = BSProcessTracker { snd };
         bes.run(recv, ctx_tracker.clone())?;
         Ok(bes)
     }
 
-    fn process_argv(event: &BShieldEvent) -> Vec<String> {
+    fn process_argv(event: &BlazrEvent) -> Vec<String> {
         let argv_count = match event.argv_count <= ARGV_COUNT as u8 {
             true => event.argv_count as usize,
             false => ARGV_COUNT,
@@ -145,7 +145,7 @@ impl BSProcessTracker {
 
     pub fn run(
         &self,
-        recv: crossbeam_channel::Receiver<BShieldEvent>,
+        recv: crossbeam_channel::Receiver<BlazrEvent>,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
         // Eviction listener is used to log events that match log rules but not any kernel rules
@@ -178,7 +178,7 @@ impl BSProcessTracker {
                 match recv.recv() {
                     Ok(event) => {
                         match event.event_type {
-                            BShieldEventType::Exit => {
+                            BlazrEventType::Exit => {
                                 // Remove from parent record and invalidate
                                 if let Some(ppid) = event.ppid {
                                     if let Some(mut entry) = thread_tracker.get(&ppid).await {
@@ -268,8 +268,8 @@ impl BSProcessTracker {
                                             }
                                         }
 
-                                        if matches!(event.action, BShieldAction::Block)
-                                            && matches!(e.action, BShieldAction::Allow)
+                                        if matches!(event.action, BlazrAction::Block)
+                                            && matches!(e.action, BlazrAction::Allow)
                                         {
                                             e.action = event.action;
                                         }
@@ -290,7 +290,7 @@ impl BSProcessTracker {
                                         // Of course alerts should be sent up right away even if we don't have all the data yet
                                         if let Ok(log_r) = log_rules.check_rules(&event) {
                                             if !log_r.ignore {
-                                                if matches!(e.action, BShieldAction::Block)
+                                                if matches!(e.action, BlazrAction::Block)
                                                     || log_r.alert
                                                 {
                                                     debug!(
@@ -343,7 +343,7 @@ impl BSProcessTracker {
                                             }
                                         }
                                         match event.event_type {
-                                            BShieldEventType::Listen => {
+                                            BlazrEventType::Listen => {
                                                 if event.protocol > 0 {
                                                     e.proto_port.push({
                                                         BSProtoPort {
@@ -372,7 +372,7 @@ impl BSProcessTracker {
                                         // Of course alerts should be sent up right away even if we don't have all the data yet
                                         if let Ok(log_r) = log_rules.check_rules(&event) {
                                             if !log_r.ignore {
-                                                if matches!(e.action, BShieldAction::Block)
+                                                if matches!(e.action, BlazrAction::Block)
                                                     || log_r.alert
                                                 {
                                                     debug!(
@@ -392,7 +392,7 @@ impl BSProcessTracker {
                                 };
                                 std::future::ready(entry)
                             })
-                            .instrument(tracing::info_span!("BpfShield"))
+                            .instrument(tracing::info_span!("BitBlazr"))
                             .await;
                     }
                     Err(e) => {

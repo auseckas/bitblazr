@@ -1,18 +1,18 @@
 use super::get_field;
 use crate::BSError;
-use bpfshield_common::{rules::*, BShieldAction, BShieldEventType, OPS_PER_RULE};
+use bitblazr_common::{rules::*, BlazrAction, BlazrEventType, OPS_PER_RULE};
 use config::{Config, File, FileFormat};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::env;
 
 fn value_to_var(
-    comm: &BShieldRuleCommand,
-    target: &BShieldRuleTarget,
+    comm: &BlazrRuleCommand,
+    target: &BlazrRuleTarget,
     src: &mut Value,
-) -> Result<BShieldVar, anyhow::Error> {
+) -> Result<BlazrVar, anyhow::Error> {
     let var = match *target {
-        BShieldRuleTarget::Port => {
+        BlazrRuleTarget::Port => {
             let port = match src.as_u64() {
                 Some(p) => p as i64,
                 None => {
@@ -24,14 +24,14 @@ fn value_to_var(
                 }
             };
 
-            BShieldVar {
-                var_type: BShieldVarType::Int,
+            BlazrVar {
+                var_type: BlazrVarType::Int,
                 int: port,
                 sbuf: [0; 25],
                 sbuf_len: 0,
             }
         }
-        BShieldRuleTarget::Path => {
+        BlazrRuleTarget::Path => {
             let path = match src.as_str() {
                 Some(s) => s,
                 None => {
@@ -57,7 +57,7 @@ fn value_to_var(
             let sbuf_len = path.len() as u16;
 
             // Reverse buffer for EndsWith, to make verifier on the other side happy
-            if matches!(comm, BShieldRuleCommand::EndsWith) {
+            if matches!(comm, BlazrRuleCommand::EndsWith) {
                 for (i, ch) in path.as_bytes().iter().rev().enumerate() {
                     sbuf[i] = *ch;
                 }
@@ -67,14 +67,14 @@ fn value_to_var(
                 }
             }
 
-            BShieldVar {
-                var_type: BShieldVarType::String,
+            BlazrVar {
+                var_type: BlazrVarType::String,
                 int: 0,
                 sbuf: sbuf,
                 sbuf_len: sbuf_len,
             }
         }
-        BShieldRuleTarget::IpVersion => {
+        BlazrRuleTarget::IpVersion => {
             let ip_version = match src.as_u64() {
                 Some(p) => p as i64,
                 None => {
@@ -97,16 +97,16 @@ fn value_to_var(
                 }
             };
 
-            BShieldVar {
-                var_type: BShieldVarType::Int,
+            BlazrVar {
+                var_type: BlazrVarType::Int,
                 int: ip_version,
                 sbuf: [0; 25],
                 sbuf_len: 0,
             }
         }
-        BShieldRuleTarget::IpType => {
+        BlazrRuleTarget::IpType => {
             let ip_type = match src.as_str() {
-                Some(s) => BShieldIpType::from_str(s.to_string().as_mut_str()),
+                Some(s) => BlazrIpType::from_str(s.to_string().as_mut_str()),
                 None => {
                     return Err(BSError::InvalidAttributeType {
                         attribute: "ip_type",
@@ -124,16 +124,16 @@ fn value_to_var(
                 .into());
             }
 
-            BShieldVar {
-                var_type: BShieldVarType::Int,
+            BlazrVar {
+                var_type: BlazrVarType::Int,
                 int: ip_type as i64,
                 sbuf: [0; 25],
                 sbuf_len: 0,
             }
         }
-        BShieldRuleTarget::IpProto => {
+        BlazrRuleTarget::IpProto => {
             let ip_proto = match src.as_str() {
-                Some(s) => BShieldIpProto::from_str(s.to_string().as_mut_str()),
+                Some(s) => BlazrIpProto::from_str(s.to_string().as_mut_str()),
                 None => {
                     return Err(BSError::InvalidAttributeType {
                         attribute: "ip_proto",
@@ -151,8 +151,8 @@ fn value_to_var(
                 .into());
             }
 
-            BShieldVar {
-                var_type: BShieldVarType::Int,
+            BlazrVar {
+                var_type: BlazrVarType::Int,
                 int: ip_proto as i64,
                 sbuf: [0; 25],
                 sbuf_len: 0,
@@ -171,8 +171,8 @@ fn value_to_var(
 }
 
 fn parse_ops(
-    shield_ops: &mut Vec<BShieldOp>,
-    target: &BShieldRuleTarget,
+    shield_ops: &mut Vec<BlazrOp>,
+    target: &BlazrRuleTarget,
     labels: &HashMap<String, i64>,
     cs: &mut Value,
 ) -> Result<Vec<i32>, anyhow::Error> {
@@ -189,7 +189,7 @@ fn parse_ops(
                     .into());
                 }
                 for (c, v) in obj.as_object_mut().unwrap_or(&mut Map::new()) {
-                    let comm = BShieldRuleCommand::from_str(c.trim().to_string().as_mut_str());
+                    let comm = BlazrRuleCommand::from_str(c.trim().to_string().as_mut_str());
                     if comm.is_undefined() {
                         return Err(BSError::InvalidAttribute {
                             attribute: "command",
@@ -197,7 +197,7 @@ fn parse_ops(
                         }
                         .into());
                     }
-                    if matches!(comm, BShieldRuleCommand::Not) {
+                    if matches!(comm, BlazrRuleCommand::Not) {
                         let ids = parse_ops(
                             shield_ops,
                             target,
@@ -213,7 +213,7 @@ fn parse_ops(
 
                     let var = value_to_var(&comm, target, v)?;
 
-                    let op = BShieldOp {
+                    let op = BlazrOp {
                         target: *target,
                         negate: false,
                         command: comm,
@@ -240,7 +240,7 @@ fn parse_ops(
 pub(crate) fn load_rules_from_config(
     rules_section: &str,
     labels: &HashMap<String, i64>,
-) -> Result<(HashMap<BShieldRulesKey, Vec<BShieldRule>>, Vec<BShieldOp>), anyhow::Error> {
+) -> Result<(HashMap<BlazrRulesKey, Vec<BlazrRule>>, Vec<BlazrOp>), anyhow::Error> {
     let mut config_dir = env::var("CONFIG_DIR").unwrap_or_else(|_| "config/".into());
     if !config_dir.ends_with('/') {
         config_dir.push('/');
@@ -264,9 +264,9 @@ pub(crate) fn load_rules(
     rules_section: &str,
     labels: &HashMap<String, i64>,
     mut rules: HashMap<String, Value>,
-) -> Result<(HashMap<BShieldRulesKey, Vec<BShieldRule>>, Vec<BShieldOp>), anyhow::Error> {
-    let mut shield_rules: HashMap<BShieldRulesKey, Vec<BShieldRule>> = HashMap::new();
-    let mut shield_ops: Vec<BShieldOp> = Vec::new();
+) -> Result<(HashMap<BlazrRulesKey, Vec<BlazrRule>>, Vec<BlazrOp>), anyhow::Error> {
+    let mut shield_rules: HashMap<BlazrRulesKey, Vec<BlazrRule>> = HashMap::new();
+    let mut shield_ops: Vec<BlazrOp> = Vec::new();
 
     if let Some(defs) = rules.get_mut(rules_section) {
         for (rule_id, mut rule) in defs
@@ -277,9 +277,9 @@ pub(crate) fn load_rules(
         {
             let mut shield_ops_idx: Vec<i32> = Vec::new();
 
-            let class: BShieldRuleClass = get_field(&mut rule, "class")?;
-            let event: BShieldEventType = get_field(&mut rule, "event")?;
-            let action: BShieldAction = get_field(&mut rule, "action")?;
+            let class: BlazrRuleClass = get_field(&mut rule, "class")?;
+            let event: BlazrEventType = get_field(&mut rule, "event")?;
+            let action: BlazrAction = get_field(&mut rule, "action")?;
             let mut ctx = Vec::new();
             if let Some(values) = rule.get("context").and_then(|ctx| ctx.as_array()) {
                 for v in values.iter() {
@@ -305,7 +305,7 @@ pub(crate) fn load_rules(
                 context[i] = l;
             }
 
-            let key = BShieldRulesKey {
+            let key = BlazrRulesKey {
                 class: class as i32,
                 event_type: event as i32,
             };
@@ -315,8 +315,7 @@ pub(crate) fn load_rules(
                 .and_then(|tg| tg.as_object_mut())
                 .unwrap_or(&mut Map::new())
             {
-                let target: BShieldRuleTarget =
-                    BShieldRuleTarget::from_str(t.to_string().as_mut_str());
+                let target: BlazrRuleTarget = BlazrRuleTarget::from_str(t.to_string().as_mut_str());
                 if !class.is_supported_target(&target) {
                     return Err(BSError::InvalidAttribute {
                         attribute: "target",
@@ -340,7 +339,7 @@ pub(crate) fn load_rules(
                 rule_ops_idx[i] = idx;
             }
 
-            let shield_rule = BShieldRule {
+            let shield_rule = BlazrRule {
                 id: (rule_id as u16) + 1,
                 class: class,
                 event: event,
@@ -365,7 +364,7 @@ mod tests {
 
     use super::load_rules;
     use crate::utils::get_hash;
-    use bpfshield_common::rules::BShieldRuleTarget;
+    use bitblazr_common::rules::BlazrRuleTarget;
     use serde_json::Value;
 
     #[test]

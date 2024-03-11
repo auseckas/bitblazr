@@ -2,8 +2,9 @@ use super::get_field;
 use crate::utils::get_hash;
 use crate::BSError;
 use aho_corasick::AhoCorasick;
-use bpfshield_common::BShieldEvent;
-use bpfshield_common::{rules::*, BShieldEventType};
+use bitblazr_common::utils;
+use bitblazr_common::BlazrEvent;
+use bitblazr_common::{rules::*, BlazrEventType};
 use config::{Config, File, FileFormat};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -18,34 +19,34 @@ enum LogVar {
 
 #[derive(Debug)]
 struct LogOp {
-    pub target: BShieldRuleTarget,
+    pub target: BlazrRuleTarget,
     pub negate: bool,
-    pub command: BShieldRuleCommand,
+    pub command: BlazrRuleCommand,
     pub var: LogVar,
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct BShieldLogResult {
+pub(crate) struct BlazrLogResult {
     pub ignore: bool,
     pub log: bool,
     pub alert: bool,
 }
 
 #[derive(Debug)]
-pub(crate) struct BShieldRuleEngine {
+pub(crate) struct BlazrRuleEngine {
     ignore: HashMap<i64, Vec<LogOp>>,
     log: HashMap<i64, Vec<LogOp>>,
     alert: HashMap<i64, Vec<LogOp>>,
 }
 
-impl BShieldRuleEngine {
-    fn get_op_key(&self, class: &BShieldRuleClass, event_type: &BShieldEventType) -> i64 {
+impl BlazrRuleEngine {
+    fn get_op_key(&self, class: &BlazrRuleClass, event_type: &BlazrEventType) -> i64 {
         (*class as i64) << 32 | *event_type as i64
     }
 
     fn check_str_var(
         &self,
-        cmd: &BShieldRuleCommand,
+        cmd: &BlazrRuleCommand,
         left: &LogVar,
         right: &[u8],
     ) -> Result<bool, anyhow::Error> {
@@ -57,10 +58,10 @@ impl BShieldRuleEngine {
                     let m_end = m.end();
 
                     let matched = match *cmd {
-                        BShieldRuleCommand::Eq => m_start == 0 && right_end == m_end,
-                        BShieldRuleCommand::StartsWith => m_start == 0,
-                        BShieldRuleCommand::EndsWith => right_end == m_end,
-                        BShieldRuleCommand::Contains => true,
+                        BlazrRuleCommand::Eq => m_start == 0 && right_end == m_end,
+                        BlazrRuleCommand::StartsWith => m_start == 0,
+                        BlazrRuleCommand::EndsWith => right_end == m_end,
+                        BlazrRuleCommand::Contains => true,
                         _ => false,
                     };
 
@@ -77,7 +78,7 @@ impl BShieldRuleEngine {
 
     fn check_int_var(
         &self,
-        cmd: &BShieldRuleCommand,
+        cmd: &BlazrRuleCommand,
         left: &LogVar,
         right: i64,
     ) -> Result<bool, anyhow::Error> {
@@ -91,8 +92,8 @@ impl BShieldRuleEngine {
                     }
                 }
                 match *cmd {
-                    BShieldRuleCommand::Eq => matched,
-                    BShieldRuleCommand::Neq => !matched,
+                    BlazrRuleCommand::Eq => matched,
+                    BlazrRuleCommand::Neq => !matched,
                     _ => false,
                 }
             }
@@ -101,14 +102,14 @@ impl BShieldRuleEngine {
         Ok(r)
     }
 
-    fn check_op(&self, op: &LogOp, e: &BShieldEvent) -> Result<bool, anyhow::Error> {
+    fn check_op(&self, op: &LogOp, e: &BlazrEvent) -> Result<bool, anyhow::Error> {
         let mut result = match op.target {
-            BShieldRuleTarget::Path => self.check_str_var(&op.command, &op.var, &e.path)?,
-            BShieldRuleTarget::Port => self.check_int_var(&op.command, &op.var, e.port as i64)?,
-            BShieldRuleTarget::IpProto => {
+            BlazrRuleTarget::Path => self.check_str_var(&op.command, &op.var, &e.path)?,
+            BlazrRuleTarget::Port => self.check_int_var(&op.command, &op.var, e.port as i64)?,
+            BlazrRuleTarget::IpProto => {
                 self.check_int_var(&op.command, &op.var, e.protocol as i64)?
             }
-            BShieldRuleTarget::Context => {
+            BlazrRuleTarget::Context => {
                 if let LogVar::String((patterns, _)) = &op.var {
                     let pats: Vec<i64> = patterns.iter().map(|s| get_hash(s) as i64).collect();
                     let mut matched = false;
@@ -140,7 +141,7 @@ impl BShieldRuleEngine {
         &self,
         key: i64,
         map: &HashMap<i64, Vec<LogOp>>,
-        e: &BShieldEvent,
+        e: &BlazrEvent,
     ) -> Result<bool, anyhow::Error> {
         if let Some(ops) = map.get(&key) {
             for op in ops {
@@ -154,8 +155,8 @@ impl BShieldRuleEngine {
         Ok(false)
     }
 
-    pub fn check_rules(&self, e: &BShieldEvent) -> Result<BShieldLogResult, anyhow::Error> {
-        let mut log_result = BShieldLogResult::default();
+    pub fn check_rules(&self, e: &BlazrEvent) -> Result<BlazrLogResult, anyhow::Error> {
+        let mut log_result = BlazrLogResult::default();
 
         debug!(
             "Log class: {:?}, event type: {:?}",
@@ -174,7 +175,7 @@ impl BShieldRuleEngine {
             "Class: {:?}, Et: {:?}, Path: {}, pid: {}, result: {:?}",
             &e.log_class,
             &e.event_type,
-            bpfshield_common::utils::str_from_buf_nul(&e.path)?,
+            utils::str_from_buf_nul(&e.path)?,
             e.pid,
             log_result
         );
@@ -182,7 +183,7 @@ impl BShieldRuleEngine {
     }
 
     fn parse_dir(
-        target: &BShieldRuleTarget,
+        target: &BlazrRuleTarget,
         labels: &HashMap<String, i64>,
         dir: &mut Value,
     ) -> Result<Vec<LogOp>, anyhow::Error> {
@@ -190,7 +191,7 @@ impl BShieldRuleEngine {
         match dir {
             Value::Object(obj) => {
                 for (c, v) in obj {
-                    let comm = BShieldRuleCommand::from_str(c.trim().to_string().as_mut_str());
+                    let comm = BlazrRuleCommand::from_str(c.trim().to_string().as_mut_str());
                     if comm.is_undefined() {
                         return Err(BSError::InvalidAttribute {
                             attribute: "command",
@@ -199,8 +200,8 @@ impl BShieldRuleEngine {
                         .into());
                     }
 
-                    if matches!(comm, BShieldRuleCommand::Not) {
-                        let mut dirs = BShieldRuleEngine::parse_dir(&target, labels, v)?;
+                    if matches!(comm, BlazrRuleCommand::Not) {
+                        let mut dirs = BlazrRuleEngine::parse_dir(&target, labels, v)?;
                         dirs = dirs
                             .into_iter()
                             .map(|mut d| {
@@ -247,7 +248,7 @@ impl BShieldRuleEngine {
                                 }
                             }
 
-                            if matches!(target, BShieldRuleTarget::Context) {
+                            if matches!(target, BlazrRuleTarget::Context) {
                                 for v in &str_vars {
                                     if !labels.contains_key(v.as_str()) {
                                         return Err(BSError::InvalidAttribute {
@@ -305,8 +306,8 @@ impl BShieldRuleEngine {
     pub(crate) fn load_rules(
         labels: &HashMap<String, i64>,
         rules: HashMap<String, Value>,
-    ) -> Result<BShieldRuleEngine, anyhow::Error> {
-        let mut bshield_log_rules = BShieldRuleEngine {
+    ) -> Result<BlazrRuleEngine, anyhow::Error> {
+        let mut bshield_log_rules = BlazrRuleEngine {
             ignore: HashMap::new(),
             log: HashMap::new(),
             alert: HashMap::new(),
@@ -315,16 +316,16 @@ impl BShieldRuleEngine {
             if let Some(rules) = rs.as_array_mut() {
                 for rule in rules.iter_mut() {
                     let mut dirs = Vec::new();
-                    let class: BShieldRuleClass = get_field(rule, "class")?;
-                    let event: BShieldEventType = get_field(rule, "event")?;
+                    let class: BlazrRuleClass = get_field(rule, "class")?;
+                    let event: BlazrEventType = get_field(rule, "event")?;
 
                     for (t, dir) in rule
                         .get_mut("directives")
                         .and_then(|tg| tg.as_object_mut())
                         .unwrap_or(&mut Map::new())
                     {
-                        let target: BShieldRuleTarget =
-                            BShieldRuleTarget::from_str(t.to_string().as_mut_str());
+                        let target: BlazrRuleTarget =
+                            BlazrRuleTarget::from_str(t.to_string().as_mut_str());
 
                         if target.is_undefined() {
                             return Err(BSError::InvalidAttribute {
@@ -334,7 +335,7 @@ impl BShieldRuleEngine {
                             .into());
                         }
 
-                        dirs.append(&mut BShieldRuleEngine::parse_dir(&target, labels, dir)?);
+                        dirs.append(&mut BlazrRuleEngine::parse_dir(&target, labels, dir)?);
                     }
                     let key = bshield_log_rules.get_op_key(&class, &event);
                     match action.as_str() {
@@ -364,7 +365,7 @@ impl BShieldRuleEngine {
 
 pub(crate) fn load_rules_from_config(
     labels: &HashMap<String, i64>,
-) -> Result<BShieldRuleEngine, anyhow::Error> {
+) -> Result<BlazrRuleEngine, anyhow::Error> {
     let mut config_dir = env::var("CONFIG_DIR").unwrap_or_else(|_| "config/".into());
     if !config_dir.ends_with('/') {
         config_dir.push('/');
@@ -381,7 +382,7 @@ pub(crate) fn load_rules_from_config(
         .try_deserialize()
         .map_err(|e| BSError::Deserialize(e.to_string()))?;
 
-    BShieldRuleEngine::load_rules(labels, rules)
+    BlazrRuleEngine::load_rules(labels, rules)
 }
 
 #[cfg(test)]
@@ -389,24 +390,24 @@ mod tests {
     use serde_json::json;
     use std::collections::HashMap;
 
-    use super::BShieldRuleEngine;
-    use bpfshield_common::{
-        rules::{BShieldRuleClass, BShieldRuleTarget},
-        BShieldAction, BShieldEvent, BShieldEventClass, BShieldEventType,
+    use super::BlazrRuleEngine;
+    use bitblazr_common::{
+        rules::{BlazrRuleClass, BlazrRuleTarget},
+        BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType,
     };
     use serde_json::Value;
 
-    fn construct_event() -> BShieldEvent {
-        BShieldEvent {
-            class: BShieldEventClass::Tracepoint,
-            event_type: BShieldEventType::Open,
-            log_class: BShieldRuleClass::File,
+    fn construct_event() -> BlazrEvent {
+        BlazrEvent {
+            class: BlazrEventClass::Tracepoint,
+            event_type: BlazrEventType::Open,
+            log_class: BlazrRuleClass::File,
             ppid: None,
             tgid: 1212,
             pid: 1212,
             uid: 1000,
             gid: 1000,
-            action: BShieldAction::Allow,
+            action: BlazrAction::Allow,
             protocol: 0,
             port: 0,
             rule_hits: [0; 5],
@@ -415,7 +416,7 @@ mod tests {
             path: [0; 255],
             path_len: 0,
             argv_count: 0,
-            argv: [[0; 200]; bpfshield_common::ARGV_COUNT],
+            argv: [[0; 200]; bitblazr_common::ARGV_COUNT],
         }
     }
 
@@ -454,7 +455,7 @@ mod tests {
             _ => panic!("Rules test definition is not an object"),
         };
 
-        let re = BShieldRuleEngine::load_rules(&labels, rules_obj);
+        let re = BlazrRuleEngine::load_rules(&labels, rules_obj);
 
         assert!(re
             .unwrap()
@@ -463,7 +464,7 @@ mod tests {
             .next()
             .unwrap()
             .iter()
-            .position(|e| e.target == BShieldRuleTarget::Context)
+            .position(|e| e.target == BlazrRuleTarget::Context)
             .is_some())
     }
 
@@ -502,7 +503,7 @@ mod tests {
             _ => panic!("Rules test definition is not an object"),
         };
 
-        let re = BShieldRuleEngine::load_rules(&labels, rules_obj);
+        let re = BlazrRuleEngine::load_rules(&labels, rules_obj);
 
         if let Some(ctx) = re
             .unwrap()
@@ -511,7 +512,7 @@ mod tests {
             .next()
             .unwrap()
             .iter()
-            .find(|e| e.target == BShieldRuleTarget::Context)
+            .find(|e| e.target == BlazrRuleTarget::Context)
         {
             assert!(ctx.negate);
         }
@@ -552,7 +553,7 @@ mod tests {
             _ => panic!("Rules test definition is not an object"),
         };
 
-        let re = BShieldRuleEngine::load_rules(&labels, rules_obj).unwrap();
+        let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
         let mut e = construct_event();
         let path = "/etc/passwd";
@@ -561,7 +562,7 @@ mod tests {
                 e.path[i] = *ch;
             }
         }
-        e.event_type = BShieldEventType::Open;
+        e.event_type = BlazrEventType::Open;
         e.labels[0] = 6027998744940314019;
 
         let result = re.check_rules(&e).unwrap();
@@ -602,7 +603,7 @@ mod tests {
             _ => panic!("Rules test definition is not an object"),
         };
 
-        let result = BShieldRuleEngine::load_rules(&labels, rules_obj);
+        let result = BlazrRuleEngine::load_rules(&labels, rules_obj);
 
         if let Err(e) = result {
             assert!(e.to_string().contains("Invalid attribute"));
@@ -654,7 +655,7 @@ mod tests {
             _ => panic!("Rules test definition is not an object"),
         };
 
-        let re = BShieldRuleEngine::load_rules(&labels, rules_obj).unwrap();
+        let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
         let mut e = construct_event();
         let path = "/etc/shadow";
@@ -663,7 +664,7 @@ mod tests {
                 e.path[i] = *ch;
             }
         }
-        e.event_type = BShieldEventType::Open;
+        e.event_type = BlazrEventType::Open;
         e.labels[0] = 6027998744940314019;
 
         let result = re.check_rules(&e).unwrap();
@@ -696,7 +697,7 @@ mod tests {
             _ => panic!("Rules test definition is not an object"),
         };
 
-        let re = BShieldRuleEngine::load_rules(&labels, rules_obj).unwrap();
+        let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
         let mut e = construct_event();
         let path = "/usr/bin/ls";
@@ -705,7 +706,7 @@ mod tests {
                 e.path[i] = *ch;
             }
         }
-        e.event_type = BShieldEventType::Exec;
+        e.event_type = BlazrEventType::Exec;
         e.labels[0] = 6027998744940314019;
 
         let result = re.check_rules(&e).unwrap();
