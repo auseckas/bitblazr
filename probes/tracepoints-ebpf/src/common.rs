@@ -1,6 +1,6 @@
-use aya_bpf::macros::map;
-use aya_bpf::maps::{Array, PerCpuArray};
-use aya_bpf::{helpers::bpf_probe_read, helpers::bpf_probe_read_user_str_bytes};
+use aya_ebpf::macros::map;
+use aya_ebpf::maps::{Array, PerCpuArray};
+use aya_ebpf::{helpers::bpf_probe_read, helpers::bpf_probe_read_user_str_bytes};
 use bitblazr_common::models::BlazrArch;
 use bitblazr_common::{BlazrEvent, ARGV_COUNT};
 

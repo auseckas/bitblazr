@@ -1,16 +1,16 @@
-use aya_bpf::{cty::c_char, BpfContext};
+use aya_ebpf::{cty::c_char, EbpfContext};
 
-use aya_bpf::bindings::sockaddr;
-use aya_bpf::helpers::{
+use aya_ebpf::bindings::sockaddr;
+use aya_ebpf::helpers::{
     bpf_d_path, bpf_get_current_task, bpf_probe_read, bpf_probe_read_kernel_str_bytes,
 };
-use aya_bpf::maps::{Array, HashMap, PerCpuArray, PerCpuHashMap, PerfEventByteArray};
-use aya_bpf::{macros::lsm, macros::map, programs::LsmContext};
+use aya_ebpf::maps::{Array, HashMap, PerCpuArray, PerCpuHashMap, PerfEventByteArray};
+use aya_ebpf::{macros::lsm, macros::map, programs::LsmContext};
 use aya_log_ebpf::debug;
 
 use crate::vmlinux::{file, linux_binprm, path as lnx_path, socket, task_struct};
 
-use aya_bpf::bindings::path;
+use aya_ebpf::bindings::path;
 
 use bitblazr_common::{
     rules::BlazrIpType, rules::BlazrOp, rules::BlazrRule, rules::BlazrRuleClass,

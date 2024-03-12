@@ -1,19 +1,20 @@
 use crate::vmlinux::{linux_binprm, sockaddr, task_struct};
 
-use aya_bpf::BpfContext;
+use aya_ebpf::EbpfContext;
 
-use aya_bpf::helpers::{
+use aya_ebpf::bindings::pt_regs;
+use aya_ebpf::helpers::{
     bpf_probe_read, bpf_probe_read_kernel_str_bytes, bpf_probe_read_user_str_bytes,
 };
-use aya_bpf::{macros::btf_tracepoint, macros::map, programs::BtfTracePointContext};
+use aya_ebpf::{macros::btf_tracepoint, macros::map, programs::BtfTracePointContext};
 use aya_log_ebpf::{debug, info};
 
 use bitblazr_common::rules::BlazrRuleClass;
 use bitblazr_common::{BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType, ARGV_COUNT};
 
 use crate::common::{sockaddr_in, sockaddr_in6, AF_INET, AF_INET6, LOCAL_BUFFER, TP_ARCH};
-use aya_bpf::maps::PerfEventByteArray;
-use aya_bpf::PtRegs;
+use aya_ebpf::maps::PerfEventByteArray;
+use aya_ebpf::PtRegs;
 use bitblazr_common::models::BlazrArch;
 use bitblazr_common::utils::check_path;
 use no_std_net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -125,11 +126,7 @@ fn process_exec(ctx: BtfTracePointContext, event_type: BlazrEventType) -> Result
 }
 
 fn process_sys_enter(ctx: BtfTracePointContext) -> Result<u32, u32> {
-    let pt_regs = unsafe {
-        PtRegs::new(
-            ctx.arg::<*const aya_bpf::bindings::pt_regs>(0) as *mut aya_bpf::bindings::pt_regs
-        )
-    };
+    let pt_regs = unsafe { PtRegs::new(ctx.arg::<*const pt_regs>(0) as *mut pt_regs) };
     let arch = unsafe { TP_ARCH.get(0).ok_or(1u32)? };
     let call_id: i64 = unsafe { ctx.arg(1) };
 
