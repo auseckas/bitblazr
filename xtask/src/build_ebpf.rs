@@ -1,3 +1,4 @@
+use core::arch;
 use std::{path::PathBuf, process::Command};
 
 use clap::Parser;
@@ -61,6 +62,10 @@ fn build_probe(path: &str, opts: &Options) -> Result<(), anyhow::Error> {
     let status = Command::new("cargo")
         .current_dir(dir)
         .env_remove("RUSTUP_TOOLCHAIN")
+        .env(
+            "RUSTFLAGS",
+            format!("--cfg bpf_target_arch=\"{}\"", std::env::consts::ARCH),
+        )
         .args(&args)
         .status()
         .expect("failed to build bpf program");
