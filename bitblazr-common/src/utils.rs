@@ -15,3 +15,8 @@ pub fn hash_nul_str(data: &[u8], len: usize) -> u32 {
     }
     hash
 }
+
+#[inline]
+pub fn check_path(path: &[u8]) -> bool {
+    path.starts_with(b"/proc/sys") || path.starts_with(b"/etc")
+}

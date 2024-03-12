@@ -27,6 +27,7 @@ pub struct BSProtoPort {
 
 #[derive(Debug, Clone)]
 pub struct BSProcess {
+    pub event_type: BlazrEventType,
     pub created: DateTime<Utc>,
     pub tgid: u32,
     pub pid: u32,
@@ -115,17 +116,22 @@ impl BSProcess {
             };
         }
 
+        let command = match self.event_type {
+            BlazrEventType::Exec => self.path.as_str(),
+            _ => self.p_path.as_str()
+        };
+
         self.logged = true;
 
         match target {
             "event" => {
-                info!(target: "event", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "event", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             "alert" => {
-                info!(target: "alert", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "alert", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             "error" => {
-                info!(target: "error", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "error", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             _ => (),
         }
@@ -357,6 +363,7 @@ impl BSProcessTracker {
                                             .to_string();
 
                                         let mut e = BSProcess {
+                                            event_type: event.event_type,
                                             created: Utc::now(),
                                             tgid: event.tgid,
                                             pid: event.pid,

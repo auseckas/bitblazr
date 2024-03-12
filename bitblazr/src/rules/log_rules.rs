@@ -172,17 +172,6 @@ impl BlazrRuleEngine {
         log_result.log = self.check_map(key, &self.log, e)?;
         log_result.alert = self.check_map(key, &self.alert, e)?;
 
-        if log_result.alert {
-            println!(
-                "Class: {:?}, Et: {:?}, Path: {}, pid: {}, port: {}, result: {:?}",
-                &e.log_class,
-                &e.event_type,
-                utils::str_from_buf_nul(&e.path)?,
-                e.pid,
-                e.port,
-                log_result
-            );
-        }
         Ok(log_result)
     }
 

@@ -29,22 +29,6 @@ use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
-struct TestWriter;
-
-impl std::io::Write for TestWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let buf_len = buf.len();
-
-        println!("Blah: {}", String::from_utf8_lossy(buf));
-        // io::stdout().write_all(buf).unwrap();
-        Ok(buf_len)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let config = config::load_config()?;
@@ -86,11 +70,6 @@ async fn main() -> Result<(), anyhow::Error> {
     tp_arch.set(0, arch, 0)?;
 
     if Path::new("/sys/kernel/btf/vmlinux").exists() {
-        // bpf_loader.attach(
-        //     &mut bpf,
-        //     bpf_context.clone(),
-        //     vec![Box::new(probes::tracepoints::Tracepoints::new())],
-        // )?;
         bpf_loader.attach(
             &mut bpf,
             bpf_context.clone(),
@@ -103,19 +82,6 @@ async fn main() -> Result<(), anyhow::Error> {
             bpf_context.clone(),
             vec![Box::new(probes::tracepoints::Tracepoints::new())],
         )?;
-
-        #[cfg(debug_assertions)]
-        let mut kp_bpf =
-            Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/bitblazr-kprobes")?;
-        #[cfg(not(debug_assertions))]
-        let mut kp_bpf =
-            Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-kprobes")?;
-
-        bpf_loader.attach(
-            &mut kp_bpf,
-            bpf_context.clone(),
-            vec![Box::new(probes::kprobes::BShielProbes::new())],
-        )?;
     }
 
     let lsm_file = match fs::read_to_string("/sys/kernel/security/lsm") {
@@ -126,27 +92,27 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     };
 
-    // if lsm_file.contains("bpf") {
-    //     #[cfg(debug_assertions)]
-    //     let mut lsm_bpf =
-    //         Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
-    //     #[cfg(not(debug_assertions))]
-    //     let mut lsm_bpf =
-    //         Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-lsm")?;
+    if lsm_file.contains("bpf") {
+        #[cfg(debug_assertions)]
+        let mut lsm_bpf =
+            Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
+        #[cfg(not(debug_assertions))]
+        let mut lsm_bpf =
+            Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-lsm")?;
 
-    //     let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
+        let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
 
-    //     bpf_loader.attach(
-    //         &mut lsm_bpf,
-    //         bpf_context.clone(),
-    //         vec![Box::new(probes::lsm::LsmTracepoints::new(
-    //             labels_snd.clone(),
-    //         ))],
-    //     )?;
-    //     probes::lsm::LsmTracepoints::run_labels_loop(lsm_bpf, labels_recv);
-    // } else {
-    //     error!(target: "error", "LSM bpf extension is not enabled. Skipping LSM modules");
-    // }
+        bpf_loader.attach(
+            &mut lsm_bpf,
+            bpf_context.clone(),
+            vec![Box::new(probes::lsm::LsmTracepoints::new(
+                labels_snd.clone(),
+            ))],
+        )?;
+        probes::lsm::LsmTracepoints::run_labels_loop(lsm_bpf, labels_recv);
+    } else {
+        error!(target: "error", "LSM bpf extension is not enabled. Skipping LSM modules");
+    }
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;

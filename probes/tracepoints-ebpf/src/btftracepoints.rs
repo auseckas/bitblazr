@@ -11,10 +11,11 @@ use aya_log_ebpf::{debug, info};
 use bitblazr_common::rules::BlazrRuleClass;
 use bitblazr_common::{BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType, ARGV_COUNT};
 
-use crate::common::{LOCAL_BUFFER, TP_ARCH};
+use crate::common::{sockaddr_in, sockaddr_in6, AF_INET, AF_INET6, LOCAL_BUFFER, TP_ARCH};
 use aya_bpf::maps::PerfEventByteArray;
 use aya_bpf::PtRegs;
 use bitblazr_common::models::BlazrArch;
+use bitblazr_common::utils::check_path;
 use no_std_net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[map]
@@ -78,7 +79,7 @@ fn process_exec(ctx: BtfTracePointContext, event_type: BlazrEventType) -> Result
     let buf_ptr = unsafe { LOCAL_BUFFER.get_ptr_mut(0).ok_or(1u32)? };
     let mut be: &mut BlazrEvent = unsafe { &mut *buf_ptr };
 
-    init_be(&ctx, &mut be).map_err(|_| 0u32)?;
+    init_be(&ctx, &mut be).map_err(|_| 1u32)?;
 
     be.event_type = BlazrEventType::Exec;
     be.log_class = BlazrRuleClass::File;
@@ -92,8 +93,8 @@ fn process_exec(ctx: BtfTracePointContext, event_type: BlazrEventType) -> Result
         }
     }
 
-    let mut argv_p: *const u8 = unsafe { (*(*task).mm).__bindgen_anon_1.arg_start as *const u8 };
-    let mut argv_p_end: *const u8 = unsafe { (*(*task).mm).__bindgen_anon_1.arg_end as *const u8 };
+    let argv_p: *const u8 = unsafe { (*(*task).mm).__bindgen_anon_1.arg_start as *const u8 };
+    let argv_p_end: *const u8 = unsafe { (*(*task).mm).__bindgen_anon_1.arg_end as *const u8 };
 
     let mut count = 0;
     let mut offset = 0;
@@ -165,12 +166,12 @@ fn process_open(
     be: &mut BlazrEvent,
 ) -> Result<u32, u32> {
     let f_name: *const u8 = pt_regs.arg(0).ok_or(1u32)?;
-    let res = unsafe { bpf_probe_read_user_str_bytes(f_name, &mut be.path).map_err(|_| 1u32)? };
+    unsafe { bpf_probe_read_user_str_bytes(f_name, &mut be.path).map_err(|_| 1u32)? };
 
     be.event_type = BlazrEventType::Open;
     be.log_class = BlazrRuleClass::File;
 
-    if be.path.starts_with(b"/proc/sys") || be.path.starts_with(b"/etc") {
+    if check_path(&be.path) {
         unsafe {
             BTP_BUFFER.output(&ctx, be.to_bytes(), 0);
         }
@@ -184,12 +185,12 @@ fn process_openat(
     be: &mut BlazrEvent,
 ) -> Result<u32, u32> {
     let f_name: *const u8 = pt_regs.arg(1).ok_or(1u32)?;
-    let res = unsafe { bpf_probe_read_user_str_bytes(f_name, &mut be.path).map_err(|_| 1u32)? };
+    unsafe { bpf_probe_read_user_str_bytes(f_name, &mut be.path).map_err(|_| 1u32)? };
 
     be.event_type = BlazrEventType::Open;
     be.log_class = BlazrRuleClass::File;
 
-    if be.path.starts_with(b"/proc/sys") || be.path.starts_with(b"/etc") {
+    if check_path(&be.path) {
         unsafe {
             BTP_BUFFER.output(&ctx, be.to_bytes(), 0);
         }
@@ -197,30 +198,11 @@ fn process_openat(
     Ok(0)
 }
 
-const AF_INET: u16 = 2;
-const AF_INET6: u16 = 10;
-
-#[derive(Clone, Copy)]
-#[repr(C)]
-struct sockaddr_in {
-    sin_family: u16,
-    sin_port: u16,
-    sin_addr: u32,
-}
-
-#[repr(C)]
-struct sockaddr_in6 {
-    sin6_family: u16,
-    sin6_port: u16,
-    sin6_addr: [u8; 16],
-}
-
 fn process_bind(
     ctx: BtfTracePointContext,
     pt_regs: PtRegs,
     be: &mut BlazrEvent,
 ) -> Result<u32, u32> {
-    let fd: i64 = pt_regs.arg(0).ok_or(1u32)?;
     let sock_addr: *const sockaddr = pt_regs.arg(1).ok_or(1u32)?;
     let sa_family: u16 = unsafe { bpf_probe_read(&(*sock_addr).sa_family).map_err(|_| 1u32)? };
 
@@ -255,13 +237,12 @@ fn process_socket(
     be: &mut BlazrEvent,
 ) -> Result<u32, u32> {
     let family = pt_regs.arg::<i64>(0).ok_or(1u32)? as u16;
-    let protocol: i64 = pt_regs.arg(2).ok_or(1u32)?;
+    be.protocol = pt_regs.arg::<i64>(2).ok_or(1u32)? as u16;
 
     be.event_type = BlazrEventType::Bind;
     be.log_class = BlazrRuleClass::Socket;
 
-    if protocol > 0 && (family == AF_INET || family == AF_INET6) {
-        be.protocol = protocol as u16;
+    if be.protocol > 0 && (family == AF_INET || family == AF_INET6) {
         unsafe {
             BTP_BUFFER.output(&ctx, be.to_bytes(), 0);
         }
@@ -272,11 +253,9 @@ fn process_socket(
 
 fn process_listen(
     ctx: BtfTracePointContext,
-    pt_regs: PtRegs,
+    _pt_regs: PtRegs,
     be: &mut BlazrEvent,
 ) -> Result<u32, u32> {
-    let fd: i64 = pt_regs.arg(0).ok_or(1u32)?;
-
     be.event_type = BlazrEventType::Listen;
     be.log_class = BlazrRuleClass::Socket;
     be.path[0] = 0u8;
@@ -292,7 +271,6 @@ fn process_connect(
     pt_regs: PtRegs,
     be: &mut BlazrEvent,
 ) -> Result<u32, u32> {
-    let fd: i64 = pt_regs.arg(0).ok_or(1u32)?;
     let sock_addr: *const sockaddr = pt_regs.arg(1).ok_or(1u32)?;
     let sa_family: u16 = unsafe { bpf_probe_read(&(*sock_addr).sa_family).map_err(|_| 1u32)? };
 

@@ -26,3 +26,21 @@ pub(crate) fn read_list_u8(src: *const *const u8, dst: &mut [[u8; 200]]) -> Resu
     }
     Ok(count)
 }
+
+pub(crate) const AF_INET: u16 = 2;
+pub(crate) const AF_INET6: u16 = 10;
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub(crate) struct sockaddr_in {
+    pub sin_family: u16,
+    pub sin_port: u16,
+    pub sin_addr: u32,
+}
+
+#[repr(C)]
+pub(crate) struct sockaddr_in6 {
+    pub sin6_family: u16,
+    pub sin6_port: u16,
+    pub sin6_addr: [u8; 16],
+}
