@@ -4,14 +4,18 @@ use aya_bpf::helpers::{
     bpf_get_current_task, bpf_probe_read, bpf_probe_read_kernel_str_bytes,
     bpf_probe_read_user_str_bytes,
 };
-use aya_bpf::{macros::kprobe, macros::tracepoint, programs::TracePointContext};
+use aya_bpf::{macros::kprobe, macros::map, macros::tracepoint, programs::TracePointContext};
 use aya_log_ebpf::{debug, info};
 
-use crate::common::{LOCAL_BUFFER, TP_ARCH, TP_BUFFER};
+use crate::common::{LOCAL_BUFFER, TP_ARCH};
 // use crate::vmlinux::task_struct;
+use aya_bpf::maps::PerfEventByteArray;
 use bitblazr_common::models::BlazrArch;
 use bitblazr_common::rules::BlazrRuleClass;
 use bitblazr_common::{BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType};
+
+#[map]
+pub static mut TP_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
 
 #[tracepoint]
 pub fn tracepoints(ctx: TracePointContext) -> u32 {

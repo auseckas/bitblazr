@@ -16,11 +16,13 @@ use moka::notification::ListenerFuture;
 use moka::{future::Cache, notification::RemovalCause};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
+use no_std_net::IpAddr;
 
 #[derive(Debug, Clone)]
 pub struct BSProtoPort {
     pub proto: u16,
     pub port: u16,
+    pub ip: IpAddr,
 }
 
 #[derive(Debug, Clone)]
@@ -51,12 +53,14 @@ impl BSProcess {
                 return;
             }
         };
+
         if self.logged && !new_info && self.path == event_path {
             return;
         }
 
         let mut proto = String::new();
         let mut ports = String::new();
+        let mut ips = String::new();
 
         if !self.proto_port.is_empty() {
             proto = match self.proto_port[0].proto {
@@ -69,14 +73,24 @@ impl BSProcess {
 
             for pp in &self.proto_port {
                 let port = pp.port;
+                let ip = pp.ip;
                 if !ports.is_empty() {
                     ports.push_str(", ");
                 } else {
                     ports.push_str("[");
                 }
                 ports.push_str(&port.to_string());
+
+                if !ips.is_empty() {
+                    ips.push_str(", ");
+                } else {
+                    ips.push_str("[");
+                }
+                ips.push_str(&ip.to_string());
+
             }
             ports.push_str("]");
+            ips.push_str("]");
         }
 
         if proto.is_empty() {
@@ -86,22 +100,32 @@ impl BSProcess {
             ports.push_str("N/A");
         }
 
-        let path = match e.event_type {
+        let mut path = match e.event_type {
             BlazrEventType::Exec => self.path.as_str(),
             _ => event_path,
         };
+
+        if path.is_empty() {
+            path = match str_from_buf_nul(&e.p_path) {
+                Ok(p) => p,
+                Err(e) => {
+                    error!(target: "error", "Could not convert path from &[u8]. Err: {}", e);
+                    return;
+                }
+            };
+        }
 
         self.logged = true;
 
         match target {
             "event" => {
-                info!(target: "event", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "event", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             "alert" => {
-                info!(target: "alert", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "alert", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             "error" => {
-                info!(target: "error", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "error", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = self.path, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             _ => (),
         }
@@ -252,14 +276,30 @@ impl BSProcessTracker {
                                                 .unwrap_or("")
                                                 .to_string();
                                         }
-                                        if event.protocol > 0 {
+                                        if event.protocol > 0 || event.port > 0 {
+                                            // println!("Proto: {}, port:{}, ip: {:?}", event.protocol, event.port, event.ip_addr);
                                             new_info = true;
-                                            e.proto_port.push({
-                                                BSProtoPort {
-                                                    proto: event.protocol,
-                                                    port: event.port,
+                                            let mut changes = false;
+                                            for pp in e.proto_port.iter_mut() {
+                                                if pp.proto == 0 && event.protocol > 0 {
+                                                    pp.proto = event.protocol;
+                                                    changes = true;
                                                 }
-                                            });
+                                                else if pp.port == 0 && event.port > 0 {
+                                                    pp.port = event.port;
+                                                    pp.ip = event.ip_addr;
+                                                    changes = true;
+                                                }
+                                            }
+                                            if !changes && !e.proto_port.iter().any(|pp| pp.port == event.port && pp.ip == event.ip_addr) {
+                                                e.proto_port.push({
+                                                    BSProtoPort {
+                                                        proto: event.protocol,
+                                                        port: event.port,
+                                                        ip: event.ip_addr
+                                                    }
+                                                });
+                                            }
                                         }
                                         for id in event.rule_hits.iter() {
                                             if *id != 0 && !e.rule_hits.contains(id) {
@@ -285,6 +325,7 @@ impl BSProcessTracker {
                                                 }
                                             }
                                         }
+
                                         // We could have multiple events for a single command, so emit log only if we have rule matches
                                         // Otherwise we delay logging, and clean it up every few seconds
                                         // Of course alerts should be sent up right away even if we don't have all the data yet
@@ -336,25 +377,24 @@ impl BSProcessTracker {
                                             argv: BSProcessTracker::process_argv(&event),
                                             logged: false,
                                         };
+
+                                        // println!("new event, path: {:?}", e.path);
                                         // If first argument is the command, remove it
                                         if !e.argv.is_empty() {
                                             if e.path.ends_with(&e.argv[0]) {
                                                 e.argv.remove(0);
                                             }
                                         }
-                                        match event.event_type {
-                                            BlazrEventType::Listen => {
-                                                if event.protocol > 0 {
-                                                    e.proto_port.push({
-                                                        BSProtoPort {
-                                                            proto: event.protocol,
-                                                            port: event.port,
-                                                        }
-                                                    });
+                                        
+                                        if event.protocol > 0 || event.port > 0 {
+                                            e.proto_port.push({
+                                                BSProtoPort {
+                                                    proto: event.protocol,
+                                                    port: event.port,
+                                                    ip: event.ip_addr
                                                 }
-                                            }
-                                            _ => (),
-                                        };
+                                            });
+                                        }
 
                                         if event.labels[0] != 0 {
                                             for l in event.labels {

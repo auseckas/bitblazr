@@ -1,14 +1,11 @@
 use aya_bpf::macros::map;
-use aya_bpf::maps::{Array, PerCpuArray, PerfEventByteArray};
+use aya_bpf::maps::{Array, PerCpuArray};
 use aya_bpf::{helpers::bpf_probe_read, helpers::bpf_probe_read_user_str_bytes};
 use bitblazr_common::models::BlazrArch;
 use bitblazr_common::{BlazrEvent, ARGV_COUNT};
 
 #[map]
 pub(crate) static mut LOCAL_BUFFER: PerCpuArray<BlazrEvent> = PerCpuArray::with_max_entries(1, 0);
-
-#[map]
-pub static mut TP_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
 
 #[map]
 pub(crate) static mut TP_ARCH: Array<BlazrArch> = Array::with_max_entries(1, 0);

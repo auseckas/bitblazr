@@ -7,6 +7,7 @@ edition = "2021"
 aya-bpf = { git = "https://github.com/aya-rs/aya" }
 aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
 bitblazr-common = { path = "../../bitblazr-common" }
+no-std-net = "0.6"
 
 [[bin]]
 name = "bitblazr-tracepoints"

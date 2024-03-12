@@ -25,6 +25,7 @@ parking_lot = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["std", "env-filter", "json"] }
 tracing-appender = "0.2"
+no-std-net = "0.6"
 
 [[bin]]
 name = "bitblazr"

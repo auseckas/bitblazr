@@ -99,6 +99,7 @@ impl BlazrRuleEngine {
             }
             _ => false,
         };
+
         Ok(r)
     }
 
@@ -171,14 +172,17 @@ impl BlazrRuleEngine {
         log_result.log = self.check_map(key, &self.log, e)?;
         log_result.alert = self.check_map(key, &self.alert, e)?;
 
-        debug!(
-            "Class: {:?}, Et: {:?}, Path: {}, pid: {}, result: {:?}",
-            &e.log_class,
-            &e.event_type,
-            utils::str_from_buf_nul(&e.path)?,
-            e.pid,
-            log_result
-        );
+        if log_result.alert {
+            println!(
+                "Class: {:?}, Et: {:?}, Path: {}, pid: {}, port: {}, result: {:?}",
+                &e.log_class,
+                &e.event_type,
+                utils::str_from_buf_nul(&e.path)?,
+                e.pid,
+                e.port,
+                log_result
+            );
+        }
         Ok(log_result)
     }
 
@@ -395,6 +399,7 @@ mod tests {
         rules::{BlazrRuleClass, BlazrRuleTarget},
         BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType,
     };
+    use no_std_net::{IpAddr as NoStdIpAddr, Ipv4Addr};
     use serde_json::Value;
 
     fn construct_event() -> BlazrEvent {
@@ -409,6 +414,7 @@ mod tests {
             gid: 1000,
             action: BlazrAction::Allow,
             protocol: 0,
+            ip_addr: NoStdIpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
             port: 0,
             rule_hits: [0; 5],
             labels: [0; 5],
@@ -712,5 +718,48 @@ mod tests {
         let result = re.check_rules(&e).unwrap();
 
         assert!(result.alert);
+    }
+
+    #[test]
+    fn check_socket_connect() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+        "ignore": [
+        ],
+        "log":  [
+        ],
+        "alert": [{
+            "class": "socket",
+            "event": "connect",
+            "directives": {
+               "port": {
+                    "neq": [ 53, 80, 123, 443 ]
+                }
+            }
+        }]});
+
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+
+        let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
+
+        let mut e = construct_event();
+
+        e.event_type = BlazrEventType::Connect;
+        e.log_class = BlazrRuleClass::Socket;
+        e.labels[0] = 6027998744940314019;
+        e.port = 53;
+
+        let result = re.check_rules(&e).unwrap();
+
+        assert!(!result.alert);
     }
 }

@@ -1,12 +1,12 @@
 use super::Probe;
 use crate::ContextTracker;
 use aya::maps::perf::{AsyncPerfEventArray, PerfBufferError};
-use aya::maps::{Array, MapData};
 use aya::programs::TracePoint;
 use aya::util::online_cpus;
 use aya::Bpf;
 use bitblazr_common::models::{BlazrArch, BlazrEvent};
 use bitblazr_common::rules::BlazrRuleVar;
+use bitblazr_common::utils::str_from_buf_nul;
 use bytes::BytesMut;
 use std::result::Result;
 use std::sync::Arc;
@@ -67,16 +67,6 @@ impl Probe for Tracepoints {
         let program: &mut TracePoint = bpf.program_mut("tracepoints").unwrap().try_into()?;
         program.load()?;
         program.attach("raw_syscalls", "sys_enter")?;
-
-        let mut tp_arch: Array<&mut MapData, BlazrArch> =
-            Array::try_from(bpf.map_mut("TP_ARCH").unwrap()).unwrap();
-
-        let arch = BlazrArch::from_str(std::env::consts::ARCH.to_string().as_mut_str());
-        if arch.is_undefined() {
-            error!(target: "error", "Usupported architecture: {}", std::env::consts::ARCH);
-            return Ok(());
-        }
-        tp_arch.set(0, arch, 0)?;
 
         Ok(())
     }

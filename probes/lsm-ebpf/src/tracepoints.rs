@@ -17,7 +17,7 @@ use bitblazr_common::{
     rules::BlazrRuleCommand, rules::BlazrRuleTarget, rules::BlazrRulesKey, rules::BlazrVar,
     BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType, OPS_PER_RULE, RULES_PER_KEY,
 };
-use no_std_net::{Ipv4Addr, Ipv6Addr};
+use no_std_net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[map]
 pub static mut LSM_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
@@ -80,6 +80,7 @@ fn process_lsm(ctx: &LsmContext, be: &mut BlazrEvent) -> Result<(), i32> {
     be.gid = ctx.gid();
     be.protocol = 0;
     be.port = 0;
+    be.ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
     be.action = BlazrAction::Allow;
     be.path_len = 0;
 
@@ -442,6 +443,7 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
         let int_ip = unsafe { (*sockaddr_in).sin_addr.to_be() };
 
         let addr = Ipv4Addr::from(int_ip);
+        be.ip_addr = IpAddr::V4(addr);
         port = unsafe { (*sockaddr_in).sin_port.to_be() };
 
         let ip_private = addr.is_private();
@@ -460,6 +462,7 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
         };
 
         let addr6 = Ipv6Addr::from(sockaddr_in.sin6_addr);
+        be.ip_addr = IpAddr::V6(addr6);
         port = sockaddr_in.sin6_port.to_be();
 
         ip_type |= 1u32 << 16;
@@ -476,6 +479,8 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
         "Port: {}, IP Version: {}, ip_type: {}", port, ip_version, ip_type
     );
 
+    be.protocol = proto;
+    be.port = port;
     let var = RuleVars {
         proto: proto,
         port: port as i64,
@@ -599,6 +604,7 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
     let rh = finalize(&ctx, &key)?;
     be.rule_hits = rh.hits;
     be.action = rh.action;
+    be.path[0] = 0u8;
 
     if matches!(be.action, BlazrAction::Block)
         || be.path.starts_with(b"/proc/sys")
@@ -650,6 +656,7 @@ fn process_socket_listen(ctx: LsmContext) -> Result<i32, i32> {
     let rh = finalize(&ctx, &key)?;
     be.rule_hits = rh.hits;
     be.action = rh.action;
+    be.path[0] = 0u8;
 
     unsafe {
         LSM_BUFFER.output(&ctx, be.to_bytes(), 0);

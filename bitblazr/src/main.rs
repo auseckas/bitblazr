@@ -19,6 +19,9 @@ use crate::loader::EbpfLoader;
 use tracker::labels::ContextTracker;
 
 use crate::probes::PsLabels;
+use aya::maps::{Array, MapData};
+use bitblazr_common::models::BlazrArch;
+use bitblazr_common::rules::BlazrRuleVar;
 use errors::BSError;
 use logs::BlazrLogs;
 use std::fs;
@@ -72,6 +75,16 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut bpf =
         Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-tracepoints")?;
 
+    let mut tp_arch: Array<&mut MapData, BlazrArch> =
+        Array::try_from(bpf.map_mut("TP_ARCH").unwrap()).unwrap();
+
+    let arch = BlazrArch::from_str(std::env::consts::ARCH.to_string().as_mut_str());
+    if arch.is_undefined() {
+        error!(target: "error", "Usupported architecture: {}", std::env::consts::ARCH);
+        return Ok(());
+    }
+    tp_arch.set(0, arch, 0)?;
+
     if Path::new("/sys/kernel/btf/vmlinux").exists() {
         // bpf_loader.attach(
         //     &mut bpf,
@@ -113,27 +126,27 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     };
 
-    if lsm_file.contains("bpf") {
-        #[cfg(debug_assertions)]
-        let mut lsm_bpf =
-            Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
-        #[cfg(not(debug_assertions))]
-        let mut lsm_bpf =
-            Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-lsm")?;
+    // if lsm_file.contains("bpf") {
+    //     #[cfg(debug_assertions)]
+    //     let mut lsm_bpf =
+    //         Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
+    //     #[cfg(not(debug_assertions))]
+    //     let mut lsm_bpf =
+    //         Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-lsm")?;
 
-        let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
+    //     let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
 
-        bpf_loader.attach(
-            &mut lsm_bpf,
-            bpf_context.clone(),
-            vec![Box::new(probes::lsm::LsmTracepoints::new(
-                labels_snd.clone(),
-            ))],
-        )?;
-        probes::lsm::LsmTracepoints::run_labels_loop(lsm_bpf, labels_recv);
-    } else {
-        error!(target: "error", "LSM bpf extension is not enabled. Skipping LSM modules");
-    }
+    //     bpf_loader.attach(
+    //         &mut lsm_bpf,
+    //         bpf_context.clone(),
+    //         vec![Box::new(probes::lsm::LsmTracepoints::new(
+    //             labels_snd.clone(),
+    //         ))],
+    //     )?;
+    //     probes::lsm::LsmTracepoints::run_labels_loop(lsm_bpf, labels_recv);
+    // } else {
+    //     error!(target: "error", "LSM bpf extension is not enabled. Skipping LSM modules");
+    // }
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;

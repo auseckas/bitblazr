@@ -1,4 +1,5 @@
 use crate::rules::{BlazrRuleClass, BlazrRuleVar};
+use no_std_net::IpAddr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
@@ -40,6 +41,7 @@ pub enum BlazrEventType {
     Open = 2,
     Listen = 3,
     Connect = 4,
+    Bind = 5,
 }
 
 impl BlazrRuleVar for BlazrEventType {
@@ -103,6 +105,7 @@ pub struct BlazrEvent {
     pub action: BlazrAction,
     pub protocol: u16,
     pub port: u16,
+    pub ip_addr: IpAddr,
     pub rule_hits: [u16; 5],
     pub labels: [i64; 5],
     pub p_path: [u8; 255],
