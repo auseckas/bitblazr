@@ -2,7 +2,11 @@ use crate::vmlinux::{linux_binprm, sockaddr, task_struct};
 
 use aya_ebpf::EbpfContext;
 
+#[cfg(not(any(bpf_target_arch = "aarch64", bpf_target_arch = "riscv64")))]
 use aya_ebpf::bindings::pt_regs;
+#[cfg(bpf_target_arch = "aarch64")]
+use aya_ebpf::bindings::user_pt_regs as pt_regs;
+
 use aya_ebpf::helpers::{
     bpf_probe_read, bpf_probe_read_kernel_str_bytes, bpf_probe_read_user_str_bytes,
 };
