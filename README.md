@@ -16,7 +16,7 @@ Key features of the BitBlazr sensor include:
 2. Robust Logging Rules: Empowering users to segregate monitoring events from potential security alerts and fine-tune filtering logic to mitigate false positives.
 3. Contextual Security: Leveraging process labels to contextualize security enforcement, distinguishing between benign activities and potentially malicious behavior. For instance, while executing the "ls" command within a container may not raise suspicion, launching any shell commands from a web server thread could signal a nefarious intrusion attempt, triggering appropriate security measures.
 
-Only Linux based deployments are currently supported. The sensor has been tested on x86_64 and Aarch64 (Arm64) architectures, on Linux kernel 6.0 and above.
+The sensor has been tested on x86_64 and Aarch64 (Arm64) architectures, on Linux kernel 6.0 and above.
 
 <hr>
 
