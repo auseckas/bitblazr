@@ -2,7 +2,7 @@
   <img src="bit_blazr_logo.jpg" width="150" title="BitBlazr">
 </p>
 
-![Build](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml/badge.svg)
+[![Build](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml/badge.svg)](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml)
 
 **BitBlazr** harnesses the power of eBPF to fortify IoT and container environments against potential threats. Blending features from Mandatory Access Controls (MAC) and eBPF-based monitoring programs, the sensor offers a kernel-level rule system for policy enforcement as well as configurable logging targets, empowering users with robust filtering logic and clear delineation between events, alerts, and informational messages.
 
