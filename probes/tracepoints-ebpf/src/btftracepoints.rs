@@ -11,12 +11,13 @@ use aya_ebpf::helpers::{
     bpf_probe_read, bpf_probe_read_kernel_str_bytes, bpf_probe_read_user_str_bytes,
 };
 use aya_ebpf::{macros::btf_tracepoint, macros::map, programs::BtfTracePointContext};
-use aya_log_ebpf::{debug, info};
+use aya_log_ebpf::debug;
 
 use bitblazr_common::rules::BlazrRuleClass;
 use bitblazr_common::{BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType, ARGV_COUNT};
 
 use crate::common::{sockaddr_in, sockaddr_in6, AF_INET, AF_INET6, LOCAL_BUFFER, TP_ARCH};
+use aya_ebpf::helpers::bpf_get_current_task;
 use aya_ebpf::maps::PerfEventByteArray;
 use aya_ebpf::PtRegs;
 use bitblazr_common::models::BlazrArch;
@@ -51,11 +52,12 @@ pub fn sys_enter(ctx: BtfTracePointContext) -> u32 {
 }
 
 fn init_be(ctx: &BtfTracePointContext, be: &mut BlazrEvent) -> Result<(), i32> {
-    let mut p_comm = ctx.command().map_err(|_| 0i32)?;
-    unsafe {
-        bpf_probe_read_kernel_str_bytes(p_comm.as_mut_ptr(), &mut be.p_path).map_err(|_| 0i32)?
-    };
+    // let mut p_comm = ctx.command().map_err(|_| 0i32)?;
+    // unsafe {
+    //     bpf_probe_read_kernel_str_bytes(p_comm.as_mut_ptr(), &mut be.p_path).map_err(|_| 0i32)?
+    // };
 
+    get_parent_path(ctx, be)?;
     be.class = BlazrEventClass::BtfTracepoint;
     be.ppid = None;
     be.tgid = ctx.tgid();
@@ -69,6 +71,20 @@ fn init_be(ctx: &BtfTracePointContext, be: &mut BlazrEvent) -> Result<(), i32> {
     be.ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
     be.path[0] = 0u8;
     be.argv_count = 0;
+
+    Ok(())
+}
+
+fn get_parent_path(_ctx: &BtfTracePointContext, be: &mut BlazrEvent) -> Result<(), i32> {
+    let task: *const task_struct = unsafe { bpf_get_current_task() as *const _ };
+    let mm: *mut crate::vmlinux::mm_struct =
+        unsafe { bpf_probe_read(&(*task).mm).map_err(|_| 0i32)? };
+
+    let argv_p = unsafe {
+        bpf_probe_read(&(*mm).__bindgen_anon_1.arg_start).map_err(|_| 0i32)? as *const u8
+    };
+
+    unsafe { bpf_probe_read_user_str_bytes(argv_p, &mut be.p_path).map_err(|_| 0i32)? };
 
     Ok(())
 }

@@ -67,8 +67,7 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     tp_arch.set(0, arch, 0)?;
 
-    // Todo: FIx this
-    if !Path::new("/sys/kernel/btf/vmlinux").exists() {
+    if Path::new("/sys/kernel/btf/vmlinux").exists() {
         bpf_loader.attach(
             &mut bpf,
             bpf_context.clone(),
@@ -91,8 +90,7 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     };
 
-    // TODO: FIx this
-    if lsm_file.contains("bbpf") {
+    if lsm_file.contains("bpf") {
         #[cfg(debug_assertions)]
         let mut lsm_bpf = Bpf::load_file("probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
         #[cfg(not(debug_assertions))]

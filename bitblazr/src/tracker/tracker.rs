@@ -45,7 +45,7 @@ pub struct BSProcess {
 
 impl BSProcess {
     pub fn emit_log_entry(&mut self, target: &str, e: &BlazrEvent, new_info: bool) {
-        println!("Logging event path: {:?}, p_path: {:?}, on record: {:?}", str_from_buf_nul(&e.path),str_from_buf_nul(&e.p_path), &self);
+        debug!("Logging event path: {:?}, p_path: {:?}, on record: {:?}", str_from_buf_nul(&e.path),str_from_buf_nul(&e.p_path), &self);
         let event_path = match str_from_buf_nul(&e.path) {
             Ok(p) => p,
             Err(e) => {
