@@ -1,4 +1,4 @@
-# ebptrace
+# BitBlazr
 
 ## Prerequisites
 
