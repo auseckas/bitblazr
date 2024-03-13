@@ -2,7 +2,6 @@ use super::get_field;
 use crate::utils::get_hash;
 use crate::BSError;
 use aho_corasick::AhoCorasick;
-use bitblazr_common::utils;
 use bitblazr_common::BlazrEvent;
 use bitblazr_common::{rules::*, BlazrEventType};
 use config::{Config, File, FileFormat};

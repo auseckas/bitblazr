@@ -4,13 +4,11 @@ use aya::maps::perf::{AsyncPerfEventArray, PerfBufferError};
 use aya::programs::TracePoint;
 use aya::util::online_cpus;
 use aya::Bpf;
-use bitblazr_common::models::{BlazrArch, BlazrEvent};
-use bitblazr_common::rules::BlazrRuleVar;
-use bitblazr_common::utils::str_from_buf_nul;
+use bitblazr_common::models::BlazrEvent;
 use bytes::BytesMut;
 use std::result::Result;
 use std::sync::Arc;
-use tracing::{error, warn};
+use tracing::warn;
 
 pub struct Tracepoints {}
 

@@ -1,4 +1,3 @@
-use core::arch;
 use std::{path::PathBuf, process::Command};
 
 use clap::Parser;

@@ -2,6 +2,7 @@ use crate::probes::Probe;
 use crate::tracker::BSProcessTracker;
 use crate::ContextTracker;
 use aya::Bpf;
+#[allow(unused_imports)]
 use aya_log::BpfLogger;
 use std::sync::Arc;
 use std::vec::Vec;
@@ -24,7 +25,9 @@ impl EbpfLoader {
         for probe in probes {
             probe.init(bpf, self.tracker.snd.clone(), ctx_tracker.clone())?;
         }
-        BpfLogger::init(bpf)?;
+
+        // For eBPF module logging, unless you are debugging modules don't enable this - eats a ton of CPU
+        // BpfLogger::init(bpf)?;
 
         Ok(())
     }

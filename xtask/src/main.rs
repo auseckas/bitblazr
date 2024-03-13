@@ -1,7 +1,6 @@
 mod build_ebpf;
 mod run;
 
-use std::env;
 use std::process::exit;
 
 use clap::Parser;

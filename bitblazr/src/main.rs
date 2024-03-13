@@ -53,11 +53,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let bpf_loader = EbpfLoader::new(event_loop);
 
     #[cfg(debug_assertions)]
-    let mut bpf =
-        Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/bitblazr-tracepoints")?;
+    let mut bpf = Bpf::load_file("probes/target/bpfel-unknown-none/debug/bitblazr-tracepoints")?;
     #[cfg(not(debug_assertions))]
-    let mut bpf =
-        Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-tracepoints")?;
+    let mut bpf = Bpf::load_file("probes/target/bpfel-unknown-none/release/bitblazr-tracepoints")?;
 
     let mut tp_arch: Array<&mut MapData, BlazrArch> =
         Array::try_from(bpf.map_mut("TP_ARCH").unwrap()).unwrap();
@@ -69,14 +67,15 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     tp_arch.set(0, arch, 0)?;
 
-    if Path::new("/sys/kernel/btf/vmlinux").exists() {
+    // Todo: FIx this
+    if !Path::new("/sys/kernel/btf/vmlinux").exists() {
         bpf_loader.attach(
             &mut bpf,
             bpf_context.clone(),
             vec![Box::new(probes::btftracepoints::BtfTracepoints::new())],
         )?;
     } else {
-        error!(target: "error", "Syscalls FS directory missing. Attempting to fall back to Kprobes");
+        error!(target: "error", "Syscalls FS directory missing. Attempting to fall back to raw syscalls");
         bpf_loader.attach(
             &mut bpf,
             bpf_context.clone(),
@@ -92,13 +91,12 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     };
 
-    if lsm_file.contains("bpf") {
+    // TODO: FIx this
+    if lsm_file.contains("bbpf") {
         #[cfg(debug_assertions)]
-        let mut lsm_bpf =
-            Bpf::load_file("../../probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
+        let mut lsm_bpf = Bpf::load_file("probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
         #[cfg(not(debug_assertions))]
-        let mut lsm_bpf =
-            Bpf::load_file("../../probes/target/bpfel-unknown-none/release/bitblazr-lsm")?;
+        let mut lsm_bpf = Bpf::load_file("probes/target/bpfel-unknown-none/release/bitblazr-lsm")?;
 
         let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
 

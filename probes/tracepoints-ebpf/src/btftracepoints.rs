@@ -68,6 +68,7 @@ fn init_be(ctx: &BtfTracePointContext, be: &mut BlazrEvent) -> Result<(), i32> {
     be.path_len = 0;
     be.ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
     be.path[0] = 0u8;
+    be.argv_count = 0;
 
     Ok(())
 }

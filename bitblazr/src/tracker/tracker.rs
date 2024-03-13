@@ -1,7 +1,7 @@
 use crate::ContextTracker;
 use aya::maps::perf::PerfBufferError;
 use bitblazr_common::{
-    models::{BlazrAction, BlazrEvent, BlazrEventClass},
+    models::{BlazrAction, BlazrEvent},
     utils::{self, str_from_buf_nul},
     BlazrEventType, ARGV_COUNT,
 };
@@ -11,9 +11,7 @@ use tracing::Instrument;
 
 use crate::rules::load_log_rules;
 use crossbeam_channel;
-use moka::future::FutureExt;
-use moka::notification::ListenerFuture;
-use moka::{future::Cache, notification::RemovalCause};
+use moka::future::Cache;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use no_std_net::IpAddr;
@@ -47,6 +45,7 @@ pub struct BSProcess {
 
 impl BSProcess {
     pub fn emit_log_entry(&mut self, target: &str, e: &BlazrEvent, new_info: bool) {
+        println!("Logging event path: {:?}, p_path: {:?}, on record: {:?}", str_from_buf_nul(&e.path),str_from_buf_nul(&e.p_path), &self);
         let event_path = match str_from_buf_nul(&e.path) {
             Ok(p) => p,
             Err(e) => {

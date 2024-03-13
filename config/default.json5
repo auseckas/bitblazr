@@ -19,7 +19,7 @@
             target: "file",
             format: "json",
             directory: "/tmp",
-            prefix: "bpfshield_alerts.log",
+            prefix: "bitblazr_alerts.log",
             rotation: "hourly",
             max_files: 5
         }

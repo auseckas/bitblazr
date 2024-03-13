@@ -6,7 +6,6 @@ use aya::programs::BtfTracePoint;
 use aya::util::online_cpus;
 use aya::{Bpf, Btf};
 use bitblazr_common::models::BlazrEvent;
-use bitblazr_common::utils::str_from_buf_nul;
 use bytes::BytesMut;
 use std::result::Result;
 use std::sync::Arc;
