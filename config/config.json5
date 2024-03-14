@@ -1,4 +1,11 @@
 {
+    features: {
+        // LSM, blocking functionality, with this off the kernel rules won't work
+        lsm: false,
+        // Tracepoints, used for monitoring
+        tracepoints: true
+
+    },
     // Logging setup
     logs: {
         default: {

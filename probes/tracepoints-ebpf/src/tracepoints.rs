@@ -1,6 +1,9 @@
 use aya_ebpf::EbpfContext;
 
-use aya_ebpf::helpers::{bpf_get_current_task, bpf_probe_read, bpf_probe_read_user_str_bytes};
+use aya_ebpf::helpers::{
+    bpf_get_current_task, bpf_probe_read, bpf_probe_read_kernel_str_bytes,
+    bpf_probe_read_user_str_bytes,
+};
 use aya_ebpf::{macros::map, macros::tracepoint, programs::TracePointContext};
 use aya_log_ebpf::debug;
 
@@ -32,12 +35,13 @@ fn init_be(ctx: &TracePointContext, be: &mut BlazrEvent) -> Result<(), u32> {
     let parent: *const task_struct = unsafe { bpf_probe_read(&(*task).parent).map_err(|_| 0u32)? };
     let ppid = unsafe { bpf_probe_read(&(*parent).pid).map_err(|_| 0u32)? };
 
-    get_parent_path(ctx, be)?;
-
-    // let mut p_comm = ctx.command().map_err(|_| 0u32)?;
-    // unsafe {
-    //     bpf_probe_read_kernel_str_bytes(p_comm.as_mut_ptr(), &mut be.p_path).map_err(|_| 0u32)?
-    // };
+    if get_parent_path(ctx, be).is_err() {
+        let mut p_comm = ctx.command().map_err(|_| 0u32)?;
+        unsafe {
+            bpf_probe_read_kernel_str_bytes(p_comm.as_mut_ptr(), &mut be.p_path)
+                .map_err(|_| 0u32)?
+        };
+    }
 
     be.class = BlazrEventClass::Tracepoint;
     be.ppid = Some(ppid as u32);

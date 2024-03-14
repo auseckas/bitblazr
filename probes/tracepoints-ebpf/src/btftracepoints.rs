@@ -52,12 +52,14 @@ pub fn sys_enter(ctx: BtfTracePointContext) -> u32 {
 }
 
 fn init_be(ctx: &BtfTracePointContext, be: &mut BlazrEvent) -> Result<(), i32> {
-    // let mut p_comm = ctx.command().map_err(|_| 0i32)?;
-    // unsafe {
-    //     bpf_probe_read_kernel_str_bytes(p_comm.as_mut_ptr(), &mut be.p_path).map_err(|_| 0i32)?
-    // };
+    if get_parent_path(ctx, be).is_err() {
+        let mut p_comm = ctx.command().map_err(|_| 0i32)?;
+        unsafe {
+            bpf_probe_read_kernel_str_bytes(p_comm.as_mut_ptr(), &mut be.p_path)
+                .map_err(|_| 0i32)?
+        };
+    }
 
-    get_parent_path(ctx, be)?;
     be.class = BlazrEventClass::BtfTracepoint;
     be.ppid = None;
     be.tgid = ctx.tgid();

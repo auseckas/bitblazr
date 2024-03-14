@@ -67,13 +67,13 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     tp_arch.set(0, arch, 0)?;
 
-    if Path::new("/sys/kernel/btf/vmlinux").exists() {
+    if Path::new("/sys/kernel/btf/vmlinux").exists() && config.features.tracepoints {
         bpf_loader.attach(
             &mut bpf,
             bpf_context.clone(),
             vec![Box::new(probes::btftracepoints::BtfTracepoints::new())],
         )?;
-    } else {
+    } else if config.features.tracepoints {
         error!(target: "error", "Syscalls FS directory missing. Attempting to fall back to raw syscalls");
         bpf_loader.attach(
             &mut bpf,
@@ -90,7 +90,7 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     };
 
-    if lsm_file.contains("bpf") {
+    if lsm_file.contains("bpf") && config.features.lsm {
         #[cfg(debug_assertions)]
         let mut lsm_bpf = Bpf::load_file("probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
         #[cfg(not(debug_assertions))]
@@ -107,7 +107,7 @@ async fn main() -> Result<(), anyhow::Error> {
         )?;
         probes::lsm::LsmTracepoints::run_labels_loop(lsm_bpf, labels_recv);
     } else {
-        error!(target: "error", "LSM bpf extension is not enabled. Skipping LSM modules");
+        error!(target: "error", "LSM is disabled or kernel bpf extension is off. Skipping LSM modules");
     }
 
     info!("Waiting for Ctrl-C...");

@@ -26,7 +26,14 @@ pub(crate) struct ShieldLogsConfig {
 }
 
 #[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]
+pub(crate) struct ShieldFeatures {
+    pub lsm: bool,
+    pub tracepoints: bool,
+}
+
+#[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]
 pub(crate) struct ShieldConfig {
+    pub features: ShieldFeatures,
     pub process_labels: HashMap<String, Vec<HashMap<String, String>>>,
     pub logs: ShieldLogsConfig,
 }

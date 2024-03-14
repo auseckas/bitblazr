@@ -2,7 +2,7 @@
 // however, they cannot block - only kernel side can.
 // So this is where you define what you would like to log or alert on. Or what should be ignored.
 // Matching is sequentual, thus if you are configuring ignore rules, they should go in front of broader log or alert rules.
-// Actions available here are: 'log', 'alert', or 'ignore', and unlike kernel side we can use methods like 'multi_starts_with'.
+// Actions available here are: 'log', 'alert', or 'ignore', and unlike kernel side we can match on arrays not just individual entries.
 
 {ignore: [
 
