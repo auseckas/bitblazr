@@ -1,7 +1,7 @@
 {
     features: {
         // LSM, blocking functionality, with this off the kernel rules won't work
-        lsm: false,
+        lsm: true,
         // Tracepoints, used for monitoring
         tracepoints: true
 
@@ -40,7 +40,7 @@
 //            mqtt_topic: "test"
 //        }
     },
-    // Definitions used in context detection
+    // Definitions used in context detection, these labels can be used in rules
     process_labels: {
         container: [
             { contains: "containerd-shim-runc" },

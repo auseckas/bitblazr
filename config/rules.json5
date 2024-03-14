@@ -2,6 +2,7 @@
 // For comparing integers you can only use 'eq' and 'neq', for strings additional two methods are available:
 //  'starts_with' and 'ends_with'.
 // All matches will be logged by default
+// These are example rules, create rules for your own enviornment or reach out to us for commercial rules
 { kernel:  [
     // Block attempts to bind to sockets that are not on port 80 or 443
     {
@@ -12,22 +13,16 @@
         },
         action: 'block'
     },
+    // Monitor file executions under /usr/bin and /usr/sbin
     {
         class: 'file',
         event: 'exec',
         rules: {
-            path: [{starts_with: "/usr/bin"}]
+            path: [{starts_with: "/usr/bin"}, {starts_with: "/usr/sbin"}]
         },
         action: 'allow'
     },
-    {
-        class: 'file',
-        event: 'exec',
-        rules: {
-            path: [{starts_with: "/usr/sbin"}]
-        },
-        action: 'allow'
-    },
+    // Example of "not" rule
     {
         class: 'file',
         event: 'exec',
@@ -36,6 +31,7 @@
         },
         action: 'allow'
     },
+    // Example of context rule, this one block attempts to read /etc/passwd by processes within a container
     {
         class: 'file',
         event: 'open',
@@ -45,6 +41,7 @@
         },
         action: 'block'
     },
+    // Example of "ends_with" usage
     {
         class: 'file',
         event: 'exec',
@@ -53,6 +50,7 @@
         },
         action: 'block'
     },
+    // Example of rule monitoring egress connections
     {
         class: 'socket',
         event: 'connect',

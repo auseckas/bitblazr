@@ -18,5 +18,14 @@ pub fn hash_nul_str(data: &[u8], len: usize) -> u32 {
 
 #[inline]
 pub fn check_path(path: &[u8]) -> bool {
-    path.starts_with(b"/proc/sys") || path.starts_with(b"/etc")
+    path.starts_with(b"/proc/sys")
+        || path.starts_with(b"/etc")
+        || path.starts_with(b"/usr/local/")
+        || path.starts_with(b"/opt")
+        || path.starts_with(b"/proc/config.gz")
+        || path.starts_with(b"/proc/kcore")
+        || path.starts_with(b"/sys/kernel")
+        || path.starts_with(b"/sys/firmware")
+        || path.starts_with(b"/var/log")
+        || path.starts_with(b"/home")
 }
