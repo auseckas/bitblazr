@@ -493,8 +493,10 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
     be.rule_hits = rh.hits;
     be.action = rh.action;
 
-    unsafe {
-        LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+    if rh.hits[0] > 0 {
+        unsafe {
+            LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+        }
     }
 
     if matches!(be.action, BlazrAction::Block) {
@@ -548,8 +550,10 @@ fn process_file_exec(ctx: LsmContext) -> Result<i32, i32> {
     be.rule_hits = rh.hits;
     be.action = rh.action;
 
-    unsafe {
-        LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+    if rh.hits[0] > 0 {
+        unsafe {
+            LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+        }
     }
 
     if matches!(be.action, BlazrAction::Block) {
@@ -606,15 +610,11 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
     be.action = rh.action;
     be.path[0] = 0u8;
 
-    if matches!(be.action, BlazrAction::Block)
-        || be.path.starts_with(b"/proc/sys")
-        || be.path.starts_with(b"/etc")
-    {
+    if rh.hits[0] > 0 {
         unsafe {
             LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
         }
     }
-
     if matches!(be.action, BlazrAction::Block) {
         Ok(-1)
     } else {
@@ -658,8 +658,10 @@ fn process_socket_listen(ctx: LsmContext) -> Result<i32, i32> {
     be.action = rh.action;
     be.path[0] = 0u8;
 
-    unsafe {
-        LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+    if rh.hits[0] > 0 {
+        unsafe {
+            LSM_BUFFER.output(&ctx, be.to_bytes(), 0);
+        }
     }
 
     if matches!(be.action, BlazrAction::Block) {

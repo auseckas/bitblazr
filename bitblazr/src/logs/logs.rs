@@ -1,3 +1,4 @@
+use super::mqtt::MqttLogger;
 use crate::config::{ShieldConfig, ShieldLogEntry};
 use crate::errors::BSError;
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
@@ -64,7 +65,7 @@ impl BlazrLogs {
     fn parse_log_entry(
         entry: &ShieldLogEntry,
     ) -> Result<(NonBlocking, WorkerGuard), anyhow::Error> {
-        match entry.target.as_str() {
+        match entry.target.trim().to_ascii_lowercase().as_str() {
             "stderr" => {
                 let r = tracing_appender::non_blocking(std::io::stderr());
                 Ok(r)
@@ -114,6 +115,11 @@ impl BlazrLogs {
                     .build(directory)?;
                 let r = tracing_appender::non_blocking(appender);
 
+                Ok(r)
+            }
+            "mqtt" => {
+                let mqtt_logger = MqttLogger::new(entry)?;
+                let r = tracing_appender::non_blocking(mqtt_logger);
                 Ok(r)
             }
             _ => {

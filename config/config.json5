@@ -23,7 +23,15 @@
             rotation: "hourly",
             max_files: 5
         }
-
+//        alerts: {
+//            enable: true,
+//            target: "mqtt",
+//            format: "json",
+//            mqtt_uri: "mqtts://[unique uri token].s2.eu.hivemq.cloud:8883/mqtt",
+//            mqtt_user: "***",
+//            mqtt_pwd: "***",
+//            mqtt_topic: "test"
+//        }
     },
     // Definitions used in context detection
     process_labels: {

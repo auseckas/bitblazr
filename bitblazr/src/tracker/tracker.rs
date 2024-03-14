@@ -14,7 +14,7 @@ use crossbeam_channel;
 use moka::future::Cache;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
-use no_std_net::IpAddr;
+use no_std_net::{IpAddr, Ipv4Addr};
 
 #[derive(Debug, Clone)]
 pub struct BSProtoPort {
@@ -296,7 +296,8 @@ impl BSProcessTracker {
                                                     changes = true;
                                                 }
                                             }
-                                            if !changes && !e.proto_port.iter().any(|pp| pp.port == event.port && pp.ip == event.ip_addr) {
+
+                                            if !changes && event.port > 0 && event.ip_addr != IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)) && !e.proto_port.iter().any(|pp| pp.port == event.port && pp.ip == event.ip_addr) {
                                                 e.proto_port.push({
                                                     BSProtoPort {
                                                         proto: event.protocol,
@@ -393,13 +394,29 @@ impl BSProcessTracker {
                                         }
                                         
                                         if event.protocol > 0 || event.port > 0 {
-                                            e.proto_port.push({
-                                                BSProtoPort {
-                                                    proto: event.protocol,
-                                                    port: event.port,
-                                                    ip: event.ip_addr
+                                            // println!("Proto: {}, port:{}, ip: {:?}", event.protocol, event.port, event.ip_addr);
+                                            let mut changes = false;
+                                            for pp in e.proto_port.iter_mut() {
+                                                if pp.proto == 0 && event.protocol > 0 {
+                                                    pp.proto = event.protocol;
+                                                    changes = true;
                                                 }
-                                            });
+                                                else if pp.port == 0 && event.port > 0 {
+                                                    pp.port = event.port;
+                                                    pp.ip = event.ip_addr;
+                                                    changes = true;
+                                                }
+                                            }
+
+                                            if !changes && event.port > 0 && event.ip_addr != IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)) && !e.proto_port.iter().any(|pp| pp.port == event.port && pp.ip == event.ip_addr) {
+                                                e.proto_port.push({
+                                                    BSProtoPort {
+                                                        proto: event.protocol,
+                                                        port: event.port,
+                                                        ip: event.ip_addr
+                                                    }
+                                                });
+                                            }
                                         }
 
                                         if event.labels[0] != 0 {

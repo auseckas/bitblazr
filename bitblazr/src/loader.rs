@@ -27,7 +27,7 @@ impl EbpfLoader {
         }
 
         // For eBPF module logging, unless you are debugging modules don't enable this - eats a ton of CPU
-        BpfLogger::init(bpf)?;
+        // BpfLogger::init(bpf)?;
 
         Ok(())
     }

@@ -11,6 +11,10 @@ pub(crate) struct ShieldLogEntry {
     pub rotation: Option<String>,
     pub max_files: Option<usize>,
     pub format: Option<String>,
+    pub mqtt_uri: Option<String>,
+    pub mqtt_user: Option<String>,
+    pub mqtt_pwd: Option<String>,
+    pub mqtt_topic: Option<String>,
 }
 
 #[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]
@@ -28,7 +32,6 @@ pub(crate) struct ShieldConfig {
 }
 
 pub(crate) fn load_config() -> Result<ShieldConfig, anyhow::Error> {
-    let run_mode = env::var("RUN_MODE").unwrap_or_else(|_| "dev".into());
     let mut config_dir = env::var("CONFIG_DIR").unwrap_or_else(|_| "config/".into());
     if !config_dir.ends_with('/') {
         config_dir.push('/');
@@ -36,11 +39,7 @@ pub(crate) fn load_config() -> Result<ShieldConfig, anyhow::Error> {
 
     let config = Config::builder()
         .add_source(File::new(
-            &format!("{}default.json5", config_dir),
-            FileFormat::Json5,
-        ))
-        .add_source(File::new(
-            &format!("{}{}.json5", config_dir, run_mode),
+            &format!("{}config.json5", config_dir),
             FileFormat::Json5,
         ))
         .build()?;
