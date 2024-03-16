@@ -21,6 +21,9 @@ Key features of the BitBlazr sensor include:
 
 The sensor has been tested on x86_64 and Aarch64 (Arm64) architectures, on Linux kernel 6.0 and above.
 
+:warning:
+The project is currently in "beta" - use at your own risk.
+
 <hr>
 
 # Installation
