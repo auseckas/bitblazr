@@ -4,6 +4,7 @@
 
 [![Build](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml/badge.svg)](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml)
 [![Discord](https://img.shields.io/discord/1219021549710086314?label=Discord&logo=discord)](https://discord.gg/xHW2cb2N6G)
+[![Documentaiton](https://img.shields.io/badge/docs-released-blue.svg?label=Documentation)](https://www.ziosec.com/bitblazr)
 
 **BitBlazr** harnesses the power of eBPF to fortify IoT and container environments against potential threats. Blending features from Mandatory Access Controls (MAC) and eBPF-based monitoring programs, the sensor offers a kernel-level rule system for policy enforcement as well as configurable logging targets, empowering users with robust filtering logic and clear delineation between events, alerts, and informational messages.
 
