@@ -3,6 +3,8 @@
 </p>
 
 [![Build](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml/badge.svg)](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml)
+[![Discord](https://img.shields.io/discord/1219021549710086314?label=Discord&logo=discord)](https://discord.gg/hCbD9RC4)
+[![Documentaiton](https://img.shields.io/badge/docs-released-blue.svg?label=Documentation)](https://www.ziosec.com/bitblazr)
 
 **BitBlazr** harnesses the power of eBPF to fortify IoT and container environments against potential threats. Blending features from Mandatory Access Controls (MAC) and eBPF-based monitoring programs, the sensor offers a kernel-level rule system for policy enforcement as well as configurable logging targets, empowering users with robust filtering logic and clear delineation between events, alerts, and informational messages.
 
@@ -15,11 +17,14 @@ Furthermore, the sensor’s eBPF programs undergo rigorous scrutiny by the kerne
 Key features of the BitBlazr sensor include:
 
 1. Kernel-Level Rule Engine: Enforced via LSM, facilitating granular control over security policies.
-2. Robust Logging Rules: Empowering users to segregate monitoring events from potential security alerts and fine-tune filtering logic to mitigate false positives.
+2. Robust Logging Rules: Empower users to segregate monitoring events from potential security alerts and fine-tune filtering logic to mitigate false positives.
 3. Contextual Security: Leveraging process labels to contextualize security enforcement, distinguishing between benign activities and potentially malicious behavior. For instance, while executing the "ls" command within a container may not raise suspicion, launching any shell commands from a web server thread could signal a nefarious intrusion attempt, triggering appropriate security measures.
 4. Send events up to the cloud - HiveMQ integration is included in the open-source version.
 
 The sensor has been tested on x86_64 and Aarch64 (Arm64) architectures, on Linux kernel 6.0 and above.
+
+:warning:
+The project is currently in "beta" - use at your own risk.
 
 <hr>
 
