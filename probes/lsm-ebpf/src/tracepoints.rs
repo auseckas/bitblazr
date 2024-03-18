@@ -4,7 +4,7 @@ use aya_ebpf::bindings::sockaddr;
 use aya_ebpf::helpers::{
     bpf_d_path, bpf_get_current_task, bpf_probe_read, bpf_probe_read_kernel_str_bytes,
 };
-use aya_ebpf::maps::{Array, HashMap, PerCpuArray, PerCpuHashMap, PerfEventByteArray};
+use aya_ebpf::maps::{Array, HashMap, LruHashMap, PerCpuArray, PerCpuHashMap, PerfEventByteArray};
 use aya_ebpf::{macros::lsm, macros::map, programs::LsmContext};
 use aya_log_ebpf::debug;
 
@@ -30,7 +30,8 @@ pub(crate) static mut LSM_RULES: HashMap<BlazrRulesKey, [BlazrRule; RULES_PER_KE
 pub(crate) static mut LSM_RULE_OPS: Array<BlazrOp> = Array::with_max_entries(1000, 0);
 
 #[map]
-pub(crate) static mut LSM_CTX_LABELS: HashMap<u32, [i64; 5]> = HashMap::with_max_entries(10_000, 0);
+pub(crate) static mut LSM_CTX_LABELS: LruHashMap<u32, [i64; 5]> =
+    LruHashMap::with_max_entries(10_000, 0);
 
 #[map]
 static mut LOCAL_BUFFER_LSM: PerCpuArray<BlazrEvent> = PerCpuArray::with_max_entries(1, 0);
