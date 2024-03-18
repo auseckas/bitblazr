@@ -364,7 +364,6 @@ mod tests {
 
     use super::load_rules;
     use crate::utils::get_hash;
-    use bitblazr_common::rules::BlazrRuleTarget;
     use serde_json::Value;
 
     #[test]

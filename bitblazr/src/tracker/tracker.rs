@@ -13,7 +13,7 @@ use crate::rules::load_log_rules;
 use crossbeam_channel;
 use moka::future::Cache;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, trace, error, info, warn};
 use no_std_net::{IpAddr, Ipv4Addr};
 
 #[derive(Debug, Clone)]
@@ -44,7 +44,7 @@ pub struct BSProcess {
 }
 
 impl BSProcess {
-    pub fn emit_log_entry(&mut self, target: &str, e: &BlazrEvent, new_info: bool) {
+    pub fn emit_log_entry(&mut self, ctx_tracker: Arc<ContextTracker>, target: &str, e: &BlazrEvent, new_info: bool) {
         debug!("Logging event path: {:?}, p_path: {:?}, on record: {:?}", str_from_buf_nul(&e.path),str_from_buf_nul(&e.p_path), &self);
         let event_path = match str_from_buf_nul(&e.path) {
             Ok(p) => p,
@@ -53,6 +53,8 @@ impl BSProcess {
                 return;
             }
         };
+        
+        let context = ctx_tracker.hashes_to_labels(&self.context);
 
         if self.logged && !new_info && self.path == event_path {
             return;
@@ -64,7 +66,7 @@ impl BSProcess {
 
         if !self.proto_port.is_empty() {
             proto = match self.proto_port[0].proto {
-                1 => "ICP",
+                1 => "ICMP",
                 6 => "TCP",
                 17 => "UDP",
                 _ => "N/A",
@@ -124,13 +126,13 @@ impl BSProcess {
 
         match target {
             "event" => {
-                info!(target: "event", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "event", event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             "alert" => {
-                info!(target: "alert", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "alert", event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             "error" => {
-                info!(target: "error", event_type = format!("{:?}", e.event_type), tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "error", event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             _ => (),
         }
@@ -226,12 +228,16 @@ impl BSProcessTracker {
                             _ => (),
                         };
 
+                        let mut ppid_context = Vec::new();
                         // If parent process exists, update children
                         if let Some(ppid) = event.ppid {
                             if let Some(mut entry) = thread_tracker.get(&ppid).await {
                                 let e = Arc::<BSProcess>::make_mut(&mut entry);
                                 if !e.children.contains(&event.pid) {
                                     e.children.push(event.pid);
+                                }
+                                for l in e.context.iter() {
+                                    ppid_context.push(*l);
                                 }
                             }
                         }
@@ -282,7 +288,7 @@ impl BSProcessTracker {
                                                 .to_string();
                                         }
                                         if event.protocol > 0 || event.port > 0 {
-                                            // println!("Proto: {}, port:{}, ip: {:?}", event.protocol, event.port, event.ip_addr);
+                                            debug!("Proto: {}, port:{}, ip: {:?}", event.protocol, event.port, event.ip_addr);
                                             new_info = true;
                                             let mut changes = false;
                                             for pp in e.proto_port.iter_mut() {
@@ -326,7 +332,6 @@ impl BSProcessTracker {
                                                     break;
                                                 }
                                                 if !e.context.contains(&l) {
-
                                                     e.context.push(l);
                                                 }
                                             }
@@ -345,9 +350,9 @@ impl BSProcessTracker {
                                                         log_r, e.action, e.path, e.pid
                                                     );
 
-                                                    e.emit_log_entry("alert", &event, new_info);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "alert", &event, new_info);
                                                 } else if log_r.log {
-                                                    e.emit_log_entry("event", &event, new_info);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "event", &event, new_info);
                                                 }
                                             }
                                         }
@@ -385,7 +390,7 @@ impl BSProcessTracker {
                                             logged: false,
                                         };
 
-                                        // println!("new event, path: {:?}", e.path);
+                                        trace!("new event, path: {:?}", e.path);
                                         // If first argument is the command, remove it
                                         if !e.argv.is_empty() {
                                             if e.path.ends_with(&e.argv[0]) {
@@ -394,7 +399,7 @@ impl BSProcessTracker {
                                         }
                                         
                                         if event.protocol > 0 || event.port > 0 {
-                                            // println!("Proto: {}, port:{}, ip: {:?}", event.protocol, event.port, event.ip_addr);
+                                            debug!("Proto: {}, port:{}, ip: {:?}", event.protocol, event.port, event.ip_addr);
                                             let mut changes = false;
                                             for pp in e.proto_port.iter_mut() {
                                                 if pp.proto == 0 && event.protocol > 0 {
@@ -419,12 +424,18 @@ impl BSProcessTracker {
                                             }
                                         }
 
+                                        // Context label inheritance
+                                        for l in ppid_context {
+                                            e.context.push(l);
+                                        }
+
                                         if event.labels[0] != 0 {
                                             for l in event.labels {
                                                 if l == 0 {
                                                     break;
                                                 }
                                                 if !e.context.contains(&l) {
+                                                    debug!("Pushing label: {}, on path: {}", l, e.path);
                                                     e.context.push(l);
                                                 }
                                             }
@@ -443,9 +454,9 @@ impl BSProcessTracker {
                                                         log_r, e.action, e.path, e.pid
                                                     );
 
-                                                    e.emit_log_entry("alert", &event, false);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "alert", &event, false);
                                                 } else if log_r.log {
-                                                    e.emit_log_entry("event", &event, false);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "event", &event, false);
                                                 }
                                             }
                                         }

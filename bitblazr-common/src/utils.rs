@@ -28,4 +28,5 @@ pub fn check_path(path: &[u8]) -> bool {
         || path.starts_with(b"/sys/firmware")
         || path.starts_with(b"/var/log")
         || path.starts_with(b"/home")
+        || path.starts_with(b"/root")
 }

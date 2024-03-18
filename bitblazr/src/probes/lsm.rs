@@ -10,7 +10,6 @@ use aya::util::online_cpus;
 use aya::{Bpf, Btf};
 use bitblazr_common::models::BlazrEvent;
 use bitblazr_common::rules::{BlazrOp, BlazrRule, BlazrRuleClass, BlazrRulesKey};
-use bitblazr_common::utils;
 use bitblazr_common::{BlazrAction, BlazrEventType, OPS_PER_RULE, RULES_PER_KEY};
 use bytes::BytesMut;
 use crossbeam_channel;
@@ -39,7 +38,7 @@ impl LsmTracepoints {
             bpf.take_map("LSM_BUFFER").unwrap().try_into()?;
 
         for cpu_id in online_cpus()? {
-            let mut lsm_buf = tp_array.open(cpu_id, Some(128))?;
+            let mut lsm_buf = tp_array.open(cpu_id, Some(256))?;
             let th_ctx_tracker = ctx_tracker.clone();
             let thread_snd = snd.clone();
             let th_labels_snd = self.labels_snd.clone();
@@ -52,64 +51,14 @@ impl LsmTracepoints {
                     let events = lsm_buf.read_events(&mut buffer).await?;
 
                     if events.lost > 0 {
-                        error!(target: "error", "Events lost in LSM_BUFFER: {}", events.lost);
+                        warn!(target: "error", "Events lost in LSM_BUFFER: {}", events.lost);
                     }
 
                     for buf in buffer.iter_mut().take(events.read) {
                         let be: &mut BlazrEvent =
                             unsafe { &mut *(buf.as_ptr() as *mut BlazrEvent) };
 
-                        let mut event_ctx = [0i64; 5];
-                        let mut ctx = th_ctx_tracker
-                            .check_process_label(utils::str_from_buf_nul(&be.path).unwrap_or(""))
-                            .unwrap_or(Vec::new());
-
-                        let mut propogate_to_parent = false;
-                        if ctx.is_empty() {
-                            ctx = th_ctx_tracker
-                                .check_process_label(
-                                    utils::str_from_buf_nul(&be.p_path).unwrap_or(""),
-                                )
-                                .unwrap_or(Vec::new());
-                            if !ctx.is_empty() {
-                                propogate_to_parent = true;
-                            }
-                        }
-
-                        for (i, c) in ctx.into_iter().enumerate() {
-                            if i >= 5 {
-                                break;
-                            }
-                            event_ctx[i] = c;
-                        }
-
-                        be.labels = event_ctx;
-                        debug!(
-                            "Path: {}, PPatth: {}, ppid: {:?}, pid: {}, labels: {:?}",
-                            utils::str_from_buf_nul(&be.path).unwrap_or(""),
-                            utils::str_from_buf_nul(&be.p_path).unwrap_or(""),
-                            be.ppid,
-                            be.pid,
-                            be.labels
-                        );
-
-                        if propogate_to_parent {
-                            if let Err(e) = th_labels_snd.send(PsLabels {
-                                ppid: be.ppid.unwrap_or(0),
-                                pid: be.ppid.unwrap_or(0),
-                                labels: be.labels,
-                            }) {
-                                warn!("Could not send Labels. Err: {}", e);
-                            }
-                        }
-
-                        if let Err(e) = th_labels_snd.send(PsLabels {
-                            ppid: be.ppid.unwrap_or(0),
-                            pid: be.pid,
-                            labels: be.labels,
-                        }) {
-                            warn!("Could not send Labels. Err: {}", e);
-                        }
+                        th_ctx_tracker.process_event(be, th_labels_snd.clone());
 
                         if let Err(e) = thread_snd.send(be.clone()) {
                             warn!("Could not send Tracepoints event. Err: {}", e);
@@ -186,6 +135,7 @@ impl LsmTracepoints {
         Ok(())
     }
 
+    // Propogate labels back to kernel space
     pub(crate) fn run_labels_loop(mut bpf: Bpf, recv: crossbeam_channel::Receiver<PsLabels>) {
         tokio::spawn(async move {
             let mut labels_map: AyaHashMap<&mut MapData, u32, [i64; 5]> =
@@ -194,6 +144,9 @@ impl LsmTracepoints {
             loop {
                 match recv.recv() {
                     Ok(ps_labels) => {
+                        if ps_labels.pid == 0 {
+                            continue;
+                        }
                         let mut new_labels = Vec::with_capacity(5);
                         let parent_labels = labels_map.get(&ps_labels.ppid, 0).unwrap_or([0; 5]);
 
@@ -217,6 +170,10 @@ impl LsmTracepoints {
                             parsed_labels[i] = l;
                         }
 
+                        debug!(
+                            "Inserting labels for pid: {}, labels: {:?}",
+                            ps_labels.pid, parsed_labels
+                        );
                         if let Err(e) = labels_map.insert(ps_labels.pid, parsed_labels, 0) {
                             error!("run_labels_loop: Could not insert new labels. Error: {}", e);
                         }

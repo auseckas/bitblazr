@@ -67,18 +67,24 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     tp_arch.set(0, arch, 0)?;
 
+    let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
+
     if Path::new("/sys/kernel/btf/vmlinux").exists() && config.features.tracepoints {
         bpf_loader.attach(
             &mut bpf,
             bpf_context.clone(),
-            vec![Box::new(probes::btftracepoints::BtfTracepoints::new())],
+            vec![Box::new(probes::btftracepoints::BtfTracepoints::new(
+                labels_snd.clone(),
+            ))],
         )?;
     } else if config.features.tracepoints {
         error!(target: "error", "Syscalls FS directory missing. Attempting to fall back to raw syscalls");
         bpf_loader.attach(
             &mut bpf,
             bpf_context.clone(),
-            vec![Box::new(probes::tracepoints::Tracepoints::new())],
+            vec![Box::new(probes::tracepoints::Tracepoints::new(
+                labels_snd.clone(),
+            ))],
         )?;
     }
 
@@ -95,8 +101,6 @@ async fn main() -> Result<(), anyhow::Error> {
         let mut lsm_bpf = Bpf::load_file("probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
         #[cfg(not(debug_assertions))]
         let mut lsm_bpf = Bpf::load_file("probes/target/bpfel-unknown-none/release/bitblazr-lsm")?;
-
-        let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
 
         bpf_loader.attach(
             &mut lsm_bpf,

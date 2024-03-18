@@ -52,6 +52,10 @@ pub fn sys_enter(ctx: BtfTracePointContext) -> u32 {
 }
 
 fn init_be(ctx: &BtfTracePointContext, be: &mut BlazrEvent) -> Result<(), i32> {
+    let task: *const task_struct = unsafe { bpf_get_current_task() as *const _ };
+    let parent: *const task_struct = unsafe { bpf_probe_read(&(*task).parent).map_err(|_| 0i32)? };
+    let ppid = unsafe { bpf_probe_read(&(*parent).pid).map_err(|_| 0i32)? };
+
     if get_parent_path(ctx, be).is_err() {
         let mut p_comm = ctx.command().map_err(|_| 0i32)?;
         unsafe {
@@ -61,7 +65,7 @@ fn init_be(ctx: &BtfTracePointContext, be: &mut BlazrEvent) -> Result<(), i32> {
     }
 
     be.class = BlazrEventClass::BtfTracepoint;
-    be.ppid = None;
+    be.ppid = Some(ppid as u32);
     be.tgid = ctx.tgid();
     be.pid = ctx.pid();
     be.uid = ctx.uid();
