@@ -32,8 +32,15 @@ pub(crate) struct ShieldFeatures {
 }
 
 #[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]
+pub(crate) struct BlazrLimits {
+    pub max_events: u32,
+    pub backoff: u32,
+}
+
+#[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]
 pub(crate) struct ShieldConfig {
     pub features: ShieldFeatures,
+    pub limits: BlazrLimits,
     pub process_labels: HashMap<String, Vec<HashMap<String, String>>>,
     pub logs: ShieldLogsConfig,
 }

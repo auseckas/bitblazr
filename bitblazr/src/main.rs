@@ -74,6 +74,7 @@ async fn main() -> Result<(), anyhow::Error> {
             &mut bpf,
             bpf_context.clone(),
             vec![Box::new(probes::btftracepoints::BtfTracepoints::new(
+                &config,
                 labels_snd.clone(),
             ))],
         )?;
@@ -83,6 +84,7 @@ async fn main() -> Result<(), anyhow::Error> {
             &mut bpf,
             bpf_context.clone(),
             vec![Box::new(probes::tracepoints::Tracepoints::new(
+                &config,
                 labels_snd.clone(),
             ))],
         )?;

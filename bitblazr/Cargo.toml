@@ -10,7 +10,7 @@ aya-log = { version = "0.2" }
 bitblazr-common = { path = "../bitblazr-common", features = ["user"] }
 anyhow = "1"
 libc = "0.2"
-tokio = { version = "1.25", features = ["macros", "rt", "rt-multi-thread", "net", "signal"] }
+tokio = { version = "1.25", features = ["macros", "rt", "rt-multi-thread", "net", "signal", "time"] }
 bytes = "1.5"
 config = "0.14"
 serde = "1.0"

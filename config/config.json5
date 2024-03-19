@@ -6,6 +6,10 @@
         tracepoints: true
 
     },
+    limits: {
+        max_events: 500, // maximum events per second, per CPU. Setting this to 0 disables limits
+        backoff: 60 // backoff time in seconds, moniotring events will be suspended for this amount of time
+    },   
     // Logging setup
     logs: {
         default: {
