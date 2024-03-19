@@ -22,6 +22,7 @@ use crate::probes::PsLabels;
 use aya::maps::{Array, MapData};
 use bitblazr_common::models::BlazrArch;
 use bitblazr_common::rules::BlazrRuleVar;
+use clap::Parser;
 use errors::BSError;
 use logs::BlazrLogs;
 use std::fs;
@@ -29,8 +30,17 @@ use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct BlazrArgs {
+    /// Sensor name
+    #[arg(short, long, default_value_t = String::new())]
+    name: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    let args = BlazrArgs::parse();
     let config = config::load_config()?;
 
     // Bump the memlock rlimit. This is needed for older kernels that don't use the
@@ -49,7 +59,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let bpf_context = Arc::new(ContextTracker::new(&config)?);
 
-    let event_loop = tracker::BSProcessTracker::new(bpf_context.clone())?;
+    let event_loop = tracker::BSProcessTracker::new(bpf_context.clone(), args.name.as_str())?;
     let bpf_loader = EbpfLoader::new(event_loop);
 
     #[cfg(debug_assertions)]

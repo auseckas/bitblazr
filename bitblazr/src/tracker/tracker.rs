@@ -15,6 +15,7 @@ use moka::future::Cache;
 use std::sync::Arc;
 use tracing::{debug, trace, error, info, warn};
 use no_std_net::{IpAddr, Ipv4Addr};
+use names::Generator;
 
 #[derive(Debug, Clone)]
 pub struct BSProtoPort {
@@ -44,7 +45,7 @@ pub struct BSProcess {
 }
 
 impl BSProcess {
-    pub fn emit_log_entry(&mut self, ctx_tracker: Arc<ContextTracker>, target: &str, e: &BlazrEvent, new_info: bool) {
+    pub fn emit_log_entry(&mut self, ctx_tracker: Arc<ContextTracker>, target: &str, sensor_name: &str, e: &BlazrEvent, new_info: bool) {
         debug!("Logging event path: {:?}, p_path: {:?}, on record: {:?}", str_from_buf_nul(&e.path),str_from_buf_nul(&e.p_path), &self);
         let event_path = match str_from_buf_nul(&e.path) {
             Ok(p) => p,
@@ -126,13 +127,13 @@ impl BSProcess {
 
         match target {
             "event" => {
-                info!(target: "event", event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "event", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             "alert" => {
-                info!(target: "alert", event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "alert", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             "error" => {
-                info!(target: "error", event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "error", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
             }
             _ => (),
         }
@@ -141,13 +142,21 @@ impl BSProcess {
 
 pub struct BSProcessTracker {
     pub snd: crossbeam_channel::Sender<BlazrEvent>,
+    sensor_name: String
 }
 
 impl BSProcessTracker {
-    pub fn new(ctx_tracker: Arc<ContextTracker>) -> Result<BSProcessTracker, anyhow::Error> {
+    pub fn new(ctx_tracker: Arc<ContextTracker>, name: &str) -> Result<BSProcessTracker, anyhow::Error> {
+        let sensor_name = match name.is_empty() {
+            true => { let mut generator = Generator::default();
+                generator.next().unwrap_or("unnamed".to_string())
+            },
+            false => name.to_string()
+        };
+
         let (snd, recv) = crossbeam_channel::bounded::<BlazrEvent>(100_000);
 
-        let bes = BSProcessTracker { snd };
+        let bes = BSProcessTracker { snd, sensor_name };
         bes.run(recv, ctx_tracker.clone())?;
         Ok(bes)
     }
@@ -200,6 +209,7 @@ impl BSProcessTracker {
         let thread_tracker = tracker.clone();
         let thread_ctx_tracker = ctx_tracker.clone();
         let log_rules = load_log_rules(thread_ctx_tracker.get_labels())?;
+        let th_sensor_name = self.sensor_name.clone();
 
         tokio::spawn(async move {
             let mut event_tracker_timer = Instant::now();
@@ -350,9 +360,9 @@ impl BSProcessTracker {
                                                         log_r, e.action, e.path, e.pid
                                                     );
 
-                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "alert", &event, new_info);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "alert", th_sensor_name.as_str(), &event, new_info);
                                                 } else if log_r.log {
-                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "event", &event, new_info);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "event", th_sensor_name.as_str(), &event, new_info);
                                                 }
                                             }
                                         }
@@ -454,9 +464,9 @@ impl BSProcessTracker {
                                                         log_r, e.action, e.path, e.pid
                                                     );
 
-                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "alert", &event, false);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(),  "alert",th_sensor_name.as_str(), &event, false);
                                                 } else if log_r.log {
-                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "event", &event, false);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "event", th_sensor_name.as_str(), &event, false);
                                                 }
                                             }
                                         }

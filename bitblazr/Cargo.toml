@@ -27,6 +27,8 @@ tracing-subscriber = { version = "0.3", features = ["std", "env-filter", "json"]
 tracing-appender = "0.2"
 no-std-net = "0.6"
 paho-mqtt = { version = "0.12", features=["vendored-ssl"] }
+clap = "4.5"
+names = { version = "0.14", default-features = false }
 
 [[bin]]
 name = "bitblazr"
