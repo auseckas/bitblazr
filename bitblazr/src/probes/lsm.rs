@@ -4,12 +4,13 @@ use crate::rules;
 use crate::BSError;
 use crate::ContextTracker;
 use aya::maps::perf::{AsyncPerfEventArray, PerfBufferError};
+use aya::maps::LpmTrie;
 use aya::maps::{Array, HashMap as AyaHashMap, MapData};
 use aya::programs::Lsm;
 use aya::util::online_cpus;
 use aya::{Bpf, Btf};
 use bitblazr_common::models::BlazrEvent;
-use bitblazr_common::rules::{BlazrOp, BlazrRule, BlazrRuleClass, BlazrRulesKey};
+use bitblazr_common::rules::{BlazrOp, BlazrRule, BlazrRuleClass, BlazrRulesKey, TrieKey};
 use bitblazr_common::{BlazrAction, BlazrEventType, OPS_PER_RULE, RULES_PER_KEY};
 use bytes::BytesMut;
 use crossbeam_channel;
@@ -96,13 +97,14 @@ impl LsmTracepoints {
         let mut map_rules: AyaHashMap<&mut MapData, BlazrRulesKey, [BlazrRule; RULES_PER_KEY]> =
             AyaHashMap::try_from(bpf.map_mut("LSM_RULES").unwrap()).unwrap();
 
-        let (lsm_rules, shield_ops) = rules::load_kernel_rules("kernel", ctx_tracker.get_labels())?;
+        let (lsm_rules, shield_ops, ip_ranges) =
+            rules::load_kernel_rules("kernel", ctx_tracker.get_labels())?;
 
         let mut id_class = HashMap::new();
         for (_, rules) in lsm_rules.iter() {
             for r in rules {
                 if id_class.contains_key(&r.id) {
-                    panic!("Bad!");
+                    panic!("This should never happen!");
                 }
 
                 id_class.insert(r.id, r.class);
@@ -130,6 +132,13 @@ impl LsmTracepoints {
 
         for (i, op) in shield_ops.into_iter().enumerate() {
             array_rule_ops.set(i as u32, op, 0)?;
+        }
+
+        let mut ip_lists: LpmTrie<&mut MapData, TrieKey, u32> =
+            LpmTrie::try_from(bpf.map_mut("LSM_IP_LISTS").unwrap()).unwrap();
+
+        for key in ip_ranges.into_iter() {
+            ip_lists.insert(&key, 1, 0)?;
         }
 
         Ok(())

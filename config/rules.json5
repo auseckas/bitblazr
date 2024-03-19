@@ -61,5 +61,15 @@
             port: [{neq: 80}, {neq: 443 }],
         },
         action: 'allow'
+    },
+    // Monitor connections for IP version 4 that do not match provided IP block
+    {
+        class: 'socket',
+        event: 'connect',
+        rules: {
+            ip_version: [{eq: 4}],
+            ip_addr: [{eq: '10.10.10.10/32'}],
+        },
+        action: 'block'
     }]
 }

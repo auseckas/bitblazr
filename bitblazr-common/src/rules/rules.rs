@@ -69,6 +69,7 @@ pub enum BlazrRuleTarget {
     IpType = 3,
     IpProto = 4,
     Context = 5,
+    IpAddr = 6,
 }
 
 impl BlazrRuleVar for BlazrRuleTarget {
@@ -80,6 +81,7 @@ impl BlazrRuleVar for BlazrRuleTarget {
             "ip_version" => BlazrRuleTarget::IpVersion,
             "ip_type" => BlazrRuleTarget::IpType,
             "ip_proto" => BlazrRuleTarget::IpProto,
+            "ip_addr" => BlazrRuleTarget::IpAddr,
             "context" => BlazrRuleTarget::Context,
             _ => BlazrRuleTarget::Undefined,
         }
@@ -136,6 +138,7 @@ impl BlazrRuleClass {
             BlazrRuleTarget::IpVersion,
             BlazrRuleTarget::Port,
             BlazrRuleTarget::IpProto,
+            BlazrRuleTarget::IpAddr,
         ];
         let file_targets = &[BlazrRuleTarget::Path];
         match self {
@@ -167,6 +170,7 @@ pub enum BlazrVarType {
     Undefined = -1,
     Int = 0,
     String = 1,
+    IpAddr = 2,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -206,14 +210,22 @@ pub struct BlazrRulesKey {
     pub event_type: i32,
 }
 
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct TrieKey {
+    pub op_id: u32,
+    pub ip: u32,
+}
+
 #[cfg(feature = "user")]
 mod maps {
     use crate::models::BlazrArch;
-    use crate::rules::{BlazrOp, BlazrRule, BlazrRulesKey, BlazrVar};
+    use crate::rules::{BlazrOp, BlazrRule, BlazrRulesKey, BlazrVar, TrieKey};
     use aya::Pod;
     unsafe impl Pod for BlazrRule {}
     unsafe impl Pod for BlazrRulesKey {}
     unsafe impl Pod for BlazrOp {}
     unsafe impl Pod for BlazrVar {}
     unsafe impl Pod for BlazrArch {}
+    unsafe impl Pod for TrieKey {}
 }

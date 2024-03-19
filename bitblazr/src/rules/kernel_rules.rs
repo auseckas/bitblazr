@@ -1,14 +1,20 @@
 use super::get_field;
 use crate::BSError;
+use aya::maps::lpm_trie::Key;
 use bitblazr_common::{rules::*, BlazrAction, BlazrEventType, OPS_PER_RULE};
 use config::{Config, File, FileFormat};
+use no_std_net::Ipv4Addr;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::env;
+use std::str::FromStr;
+use tracing::debug;
 
 fn value_to_var(
     comm: &BlazrRuleCommand,
     target: &BlazrRuleTarget,
+    ip_ranges: &mut Vec<Key<TrieKey>>,
+    op_id: usize,
     src: &mut Value,
 ) -> Result<BlazrVar, anyhow::Error> {
     let var = match *target {
@@ -158,6 +164,74 @@ fn value_to_var(
                 sbuf_len: 0,
             }
         }
+        BlazrRuleTarget::IpAddr => {
+            let mut s = match src.as_str() {
+                Some(s) => s.trim(),
+                None => {
+                    return Err(BSError::InvalidAttributeType {
+                        attribute: "ip_addr",
+                        value: format!("{:?}", src),
+                    }
+                    .into());
+                }
+            };
+
+            let mut prefix = 32;
+            if s.contains("/") {
+                let ip_mask: Vec<&str> = s.splitn(2, '/').collect();
+                if ip_mask.len() == 2 {
+                    s = ip_mask[0];
+                    let p = ip_mask[1];
+                    prefix = match p.parse::<u32>() {
+                        Ok(n) => n,
+                        Err(_) => {
+                            return Err(BSError::InvalidAttributeType {
+                                attribute: "ip_addr_prefix",
+                                value: format!("{:?}", p),
+                            }
+                            .into());
+                        }
+                    }
+                };
+            }
+            let ip_addr = match Ipv4Addr::from_str(s) {
+                Ok(ip) => u32::from(ip).to_be(),
+                Err(_) => {
+                    return Err(BSError::InvalidAttribute {
+                        attribute: "ip_addr",
+                        value: format!("{:?}", s),
+                    }
+                    .into());
+                }
+            };
+
+            debug!(
+                "Adding key, prefix: {}, op_id: {}, ip: {}",
+                prefix, op_id, ip_addr
+            );
+            let key = Key::new(
+                prefix + 32,
+                TrieKey {
+                    op_id: op_id as u32,
+                    ip: ip_addr,
+                },
+            );
+
+            debug!("Key: {:?}", unsafe {
+                ::core::slice::from_raw_parts(
+                    (&key as *const Key<TrieKey>) as *const u8,
+                    ::core::mem::size_of::<Key<TrieKey>>(),
+                )
+            });
+            ip_ranges.push(key);
+
+            BlazrVar {
+                var_type: BlazrVarType::IpAddr,
+                int: op_id as i64,
+                sbuf: [0; 25],
+                sbuf_len: 0,
+            }
+        }
         _ => {
             return Err(BSError::InvalidAttribute {
                 attribute: "target",
@@ -172,6 +246,7 @@ fn value_to_var(
 
 fn parse_ops(
     shield_ops: &mut Vec<BlazrOp>,
+    ip_ranges: &mut Vec<Key<TrieKey>>,
     target: &BlazrRuleTarget,
     labels: &HashMap<String, i64>,
     cs: &mut Value,
@@ -200,6 +275,7 @@ fn parse_ops(
                     if matches!(comm, BlazrRuleCommand::Not) {
                         let ids = parse_ops(
                             shield_ops,
+                            ip_ranges,
                             target,
                             labels,
                             &mut Value::from(vec![v.clone()]),
@@ -211,7 +287,8 @@ fn parse_ops(
                         continue;
                     }
 
-                    let var = value_to_var(&comm, target, v)?;
+                    let idx = shield_ops.len();
+                    let var = value_to_var(&comm, target, ip_ranges, idx, v)?;
 
                     let op = BlazrOp {
                         target: *target,
@@ -220,7 +297,6 @@ fn parse_ops(
                         var: var,
                     };
                     shield_ops.push(op);
-                    let idx = shield_ops.len() - 1;
                     ops_idx.push(idx as i32);
                 }
             }
@@ -240,7 +316,14 @@ fn parse_ops(
 pub(crate) fn load_rules_from_config(
     rules_section: &str,
     labels: &HashMap<String, i64>,
-) -> Result<(HashMap<BlazrRulesKey, Vec<BlazrRule>>, Vec<BlazrOp>), anyhow::Error> {
+) -> Result<
+    (
+        HashMap<BlazrRulesKey, Vec<BlazrRule>>,
+        Vec<BlazrOp>,
+        Vec<Key<TrieKey>>,
+    ),
+    anyhow::Error,
+> {
     let mut config_dir = env::var("CONFIG_DIR").unwrap_or_else(|_| "config/".into());
     if !config_dir.ends_with('/') {
         config_dir.push('/');
@@ -264,9 +347,17 @@ pub(crate) fn load_rules(
     rules_section: &str,
     labels: &HashMap<String, i64>,
     mut rules: HashMap<String, Value>,
-) -> Result<(HashMap<BlazrRulesKey, Vec<BlazrRule>>, Vec<BlazrOp>), anyhow::Error> {
+) -> Result<
+    (
+        HashMap<BlazrRulesKey, Vec<BlazrRule>>,
+        Vec<BlazrOp>,
+        Vec<Key<TrieKey>>,
+    ),
+    anyhow::Error,
+> {
     let mut shield_rules: HashMap<BlazrRulesKey, Vec<BlazrRule>> = HashMap::new();
     let mut shield_ops: Vec<BlazrOp> = Vec::new();
+    let mut ip_ranges: Vec<Key<TrieKey>> = Vec::new();
 
     if let Some(defs) = rules.get_mut(rules_section) {
         for (rule_id, mut rule) in defs
@@ -323,7 +414,13 @@ pub(crate) fn load_rules(
                     }
                     .into());
                 }
-                shield_ops_idx.append(&mut parse_ops(&mut shield_ops, &target, labels, rs)?);
+                shield_ops_idx.append(&mut parse_ops(
+                    &mut shield_ops,
+                    &mut ip_ranges,
+                    &target,
+                    labels,
+                    rs,
+                )?);
             }
 
             let mut rule_ops_idx = [-1i32; OPS_PER_RULE];
@@ -354,7 +451,7 @@ pub(crate) fn load_rules(
         }
     }
 
-    Ok((shield_rules, shield_ops))
+    Ok((shield_rules, shield_ops, ip_ranges))
 }
 
 #[cfg(test)]
@@ -400,7 +497,7 @@ mod tests {
                 .collect::<HashMap<String, Value>>(),
             _ => panic!("Rules test definition is not an object"),
         };
-        let (shield_rules, _shield_ops) = load_rules("kernel", &labels, rules_obj).unwrap();
+        let (shield_rules, _shield_ops, _) = load_rules("kernel", &labels, rules_obj).unwrap();
         assert_eq!(shield_rules.iter().next().unwrap().1[0].ops[0], 0);
         assert_eq!(shield_rules.iter().next().unwrap().1[0].ops[1], 1);
     }
@@ -485,7 +582,7 @@ mod tests {
                 .collect::<HashMap<String, Value>>(),
             _ => panic!("Rules test definition is not an object"),
         };
-        let (shield_rules, _shield_ops) = load_rules("kernel", &labels, rules_obj).unwrap();
+        let (shield_rules, _shield_ops, _) = load_rules("kernel", &labels, rules_obj).unwrap();
 
         assert!(shield_rules
             .values()

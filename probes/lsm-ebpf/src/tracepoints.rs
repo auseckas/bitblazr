@@ -4,7 +4,10 @@ use aya_ebpf::bindings::sockaddr;
 use aya_ebpf::helpers::{
     bpf_d_path, bpf_get_current_task, bpf_probe_read, bpf_probe_read_kernel_str_bytes,
 };
-use aya_ebpf::maps::{Array, HashMap, LruHashMap, PerCpuArray, PerCpuHashMap, PerfEventByteArray};
+use aya_ebpf::maps::lpm_trie::Key;
+use aya_ebpf::maps::{
+    Array, HashMap, LpmTrie, LruHashMap, PerCpuArray, PerCpuHashMap, PerfEventByteArray,
+};
 use aya_ebpf::{macros::lsm, macros::map, programs::LsmContext};
 use aya_log_ebpf::debug;
 
@@ -48,11 +51,21 @@ static mut LOCAL_OPS: PerCpuArray<[OpTracker; RULES_PER_KEY * OPS_PER_RULE]> =
 static mut LOCAL_OPS_RESULTS: PerCpuHashMap<i64, bool> =
     PerCpuHashMap::with_max_entries(RULES_PER_KEY as u32 * OPS_PER_RULE as u32, 0);
 
+#[repr(C)]
+pub struct TrieKey {
+    pub op_id: u32,
+    pub ip: u32,
+}
+
+#[map]
+pub(crate) static mut LSM_IP_LISTS: LpmTrie<TrieKey, u32> = LpmTrie::with_max_entries(1000, 0);
+
 struct RuleVars<'a> {
     proto: u16,
     port: i64,
     ip_version: i64,
     ip_type: u32,
+    ip_addr: u32,
     path: &'a [u8],
 }
 
@@ -302,6 +315,27 @@ fn process_ops(_ctx: &LsmContext, var: RuleVars) -> Result<(), i32> {
                     _ => false,
                 }
             }
+            BlazrRuleTarget::IpAddr => {
+                if var.ip_addr == 0 {
+                    false
+                } else {
+                    let ip_key = Key::new(
+                        64,
+                        TrieKey {
+                            op_id: op_tracker.op_id as u32,
+                            ip: var.ip_addr,
+                        },
+                    );
+
+                    let res = unsafe { LSM_IP_LISTS.get(&ip_key).is_some() };
+                    match &op.command {
+                        BlazrRuleCommand::Eq => res,
+                        BlazrRuleCommand::Neq => !res,
+                        _ => false,
+                    }
+                }
+            }
+
             _ => continue,
         };
 
@@ -440,12 +474,13 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
 
     let mut port = 0;
     let mut ip_type: u32 = 0;
+    let mut ip_addr = 0;
 
     if sa_family == AF_INET {
         let sockaddr_in: *const sockaddr_in = unsafe { ctx.arg(1) };
-        let int_ip = unsafe { (*sockaddr_in).sin_addr.to_be() };
+        ip_addr = unsafe { (*sockaddr_in).sin_addr.to_be() };
 
-        let addr = Ipv4Addr::from(int_ip);
+        let addr = Ipv4Addr::from(ip_addr);
         be.ip_addr = IpAddr::V4(addr);
         port = unsafe { (*sockaddr_in).sin_port.to_be() };
 
@@ -453,7 +488,6 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
         let ip_public = !ip_private;
         let ip_loopback = addr.is_loopback();
         let ip_multicast = addr.is_multicast();
-
         ip_type = (ip_private as u32) << 24
             | (ip_public as u32) << 16
             | (ip_loopback as u32) << 8
@@ -489,6 +523,7 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
         port: port as i64,
         ip_version: ip_version as i64,
         ip_type: ip_type,
+        ip_addr: ip_addr.to_be(),
         path: &[0; 0],
     };
     process_ops(&ctx, var)?;
@@ -546,6 +581,7 @@ fn process_file_exec(ctx: LsmContext) -> Result<i32, i32> {
         port: 0,
         ip_version: 0,
         ip_type: 0,
+        ip_addr: 0,
         path: sbuf,
     };
     process_ops(&ctx, var)?;
@@ -605,6 +641,7 @@ fn process_file_open(ctx: LsmContext) -> Result<i32, i32> {
         port: 0,
         ip_version: 0,
         ip_type: 0,
+        ip_addr: 0,
         path: sbuf,
     };
     process_ops(&ctx, var)?;
@@ -653,6 +690,7 @@ fn process_socket_listen(ctx: LsmContext) -> Result<i32, i32> {
         port: be.port as i64,
         ip_version: 0,
         ip_type: 0,
+        ip_addr: 0,
         path: &[0; 0],
     };
     process_ops(&ctx, var)?;
