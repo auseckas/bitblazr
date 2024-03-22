@@ -21,7 +21,7 @@ Key features of the BitBlazr sensor include:
 3. Contextual Security: Leveraging process labels to contextualize security enforcement, distinguishing between benign activities and potentially malicious behavior. For instance, while executing the "ls" command within a container may not raise suspicion, launching any shell commands from a web server thread could signal a nefarious intrusion attempt, triggering appropriate security measures.
 4. Send events up to the cloud - HiveMQ integration is included in the open-source version.
 
-The sensor has been tested on x86_64 and Aarch64 (Arm64) architectures, on Linux kernel 6.0 and above.
+The sensor has been tested on x86_64 and Aarch64 (Arm64) architectures, on Linux kernel 6.0 and above. Instructions on how to build it on Raspberry PI can be found here: https://www.ziosec.com/post/deploying-bitblazr-on-raspberry-pi
 
 :warning:
 The project is currently in "beta" - use at your own risk.
