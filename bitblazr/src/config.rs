@@ -15,6 +15,7 @@ pub(crate) struct ShieldLogEntry {
     pub mqtt_user: Option<String>,
     pub mqtt_pwd: Option<String>,
     pub mqtt_topic: Option<String>,
+    pub mqtt_server_cert_auth: Option<bool>,
 }
 
 #[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]

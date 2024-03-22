@@ -1,5 +1,6 @@
 use crate::config::ShieldLogEntry;
 use crate::BSError;
+use paho_mqtt::SslOptionsBuilder;
 use paho_mqtt::{
     Client, ConnectOptionsBuilder, CreateOptionsBuilder, DisconnectOptions, Message, SslOptions,
     MQTT_VERSION_5,
@@ -14,10 +15,17 @@ pub(crate) struct MqttLogger {
 }
 
 impl MqttLogger {
-    pub fn new(entry: &ShieldLogEntry) -> Result<MqttLogger, anyhow::Error> {
+    pub fn new(entry: &ShieldLogEntry, sensor_name: &str) -> Result<MqttLogger, anyhow::Error> {
+        let ssl_options = match matches!(entry.mqtt_server_cert_auth, Some(false)) {
+            true => SslOptionsBuilder::new()
+                .enable_server_cert_auth(false)
+                .finalize(),
+            false => SslOptions::default(),
+        };
+
         let mut options = ConnectOptionsBuilder::new();
         options
-            .ssl_options(SslOptions::default())
+            .ssl_options(ssl_options)
             .automatic_reconnect(Duration::from_secs(1), Duration::from_secs(300))
             .clean_start(true);
 
@@ -26,10 +34,14 @@ impl MqttLogger {
             None => return Err(BSError::MissingAttribute("mqtt_uri".to_string()).into()),
         };
 
-        let client_opts = CreateOptionsBuilder::new()
+        let mut client_opts_builder = CreateOptionsBuilder::new()
             .mqtt_version(MQTT_VERSION_5)
-            .server_uri(uri)
-            .finalize();
+            .server_uri(uri);
+
+        if !sensor_name.is_empty() {
+            client_opts_builder = client_opts_builder.client_id(sensor_name);
+        }
+        let client_opts = client_opts_builder.finalize();
 
         if let Some(user) = &entry.mqtt_user {
             options.user_name(user);
@@ -43,7 +55,7 @@ impl MqttLogger {
 
         let client = Client::new(client_opts)?;
 
-        client.connect(connect_ops)?;
+        client.connect(connect_ops).unwrap();
 
         Ok(MqttLogger {
             client,

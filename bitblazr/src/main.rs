@@ -50,7 +50,7 @@ async fn main() -> Result<(), anyhow::Error> {
         rlim_max: libc::RLIM_INFINITY,
     };
 
-    let _logs = BlazrLogs::new(&config)?;
+    let _logs = BlazrLogs::new(&config, &args.name)?;
 
     let ret = unsafe { libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlim) };
     if ret != 0 {

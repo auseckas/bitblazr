@@ -64,6 +64,7 @@ pub struct BlazrLogs {
 impl BlazrLogs {
     fn parse_log_entry(
         entry: &ShieldLogEntry,
+        sensor_name: &str,
     ) -> Result<(NonBlocking, WorkerGuard), anyhow::Error> {
         match entry.target.trim().to_ascii_lowercase().as_str() {
             "stderr" => {
@@ -118,7 +119,7 @@ impl BlazrLogs {
                 Ok(r)
             }
             "mqtt" => {
-                let mqtt_logger = MqttLogger::new(entry)?;
+                let mqtt_logger = MqttLogger::new(entry, sensor_name)?;
                 let r = tracing_appender::non_blocking(mqtt_logger);
                 Ok(r)
             }
@@ -132,14 +133,14 @@ impl BlazrLogs {
         }
     }
 
-    pub fn new(config: &ShieldConfig) -> Result<BlazrLogs, anyhow::Error> {
+    pub fn new(config: &ShieldConfig, sensor_name: &str) -> Result<BlazrLogs, anyhow::Error> {
         let logs_conf = &config.logs;
 
         let mut layers = Vec::new();
         let mut guards = Vec::new();
 
         if logs_conf.default.enable {
-            let (w, guard) = BlazrLogs::parse_log_entry(&logs_conf.default)?;
+            let (w, guard) = BlazrLogs::parse_log_entry(&logs_conf.default, sensor_name)?;
             guards.push(guard);
 
             let mut filters = Vec::new();
@@ -159,7 +160,7 @@ impl BlazrLogs {
 
         if let Some(ref e) = logs_conf.errors {
             if e.enable {
-                let (w, guard) = BlazrLogs::parse_log_entry(&e)?;
+                let (w, guard) = BlazrLogs::parse_log_entry(&e, sensor_name)?;
                 guards.push(guard);
 
                 let f = filter::filter_fn(|metadata| metadata.target() == "error");
@@ -169,7 +170,7 @@ impl BlazrLogs {
 
         if let Some(ref e) = logs_conf.events {
             if e.enable {
-                let (w, guard) = BlazrLogs::parse_log_entry(&e)?;
+                let (w, guard) = BlazrLogs::parse_log_entry(&e, sensor_name)?;
                 guards.push(guard);
                 let f = filter::filter_fn(|metadata| metadata.target() == "event");
                 parse_layer!(layers, w, &e.format, Some(f));
@@ -178,7 +179,7 @@ impl BlazrLogs {
 
         if let Some(ref e) = logs_conf.alerts {
             if e.enable {
-                let (w, guard) = BlazrLogs::parse_log_entry(&e)?;
+                let (w, guard) = BlazrLogs::parse_log_entry(&e, sensor_name)?;
                 guards.push(guard);
 
                 let f = filter::filter_fn(|metadata| metadata.target() == "alert");
