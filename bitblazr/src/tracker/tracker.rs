@@ -16,6 +16,8 @@ use std::sync::Arc;
 use tracing::{debug, trace, error, info, warn};
 use no_std_net::{IpAddr, Ipv4Addr};
 use names::Generator;
+use std::collections::HashSet;
+use crate::utils::vec_to_string;
 
 #[derive(Debug, Clone)]
 pub struct BSProtoPort {
@@ -62,8 +64,8 @@ impl BSProcess {
         }
 
         let mut proto = String::new();
-        let mut ports = String::new();
-        let mut ips = String::new();
+        let mut ports_str = String::new();
+        let mut ips_str = String::new();
 
         if !self.proto_port.is_empty() {
             proto = match self.proto_port[0].proto {
@@ -74,33 +76,18 @@ impl BSProcess {
             }
             .to_string();
 
-            for pp in &self.proto_port {
-                let port = pp.port;
-                let ip = pp.ip;
-                if !ports.is_empty() {
-                    ports.push_str(", ");
-                } else {
-                    ports.push_str("[");
-                }
-                ports.push_str(&port.to_string());
+            let ports = self.proto_port.iter().map(|pp| pp.port).collect::<HashSet<_>>();
+            let ips = self.proto_port.iter().map(|pp| pp.ip).collect::<HashSet<_>>();
 
-                if !ips.is_empty() {
-                    ips.push_str(", ");
-                } else {
-                    ips.push_str("[");
-                }
-                ips.push_str(&ip.to_string());
+            ports_str = vec_to_string(ports.into_iter().collect());
+            ips_str = vec_to_string(ips.into_iter().collect());
 
-            }
-            ports.push_str("]");
-            ips.push_str("]");
         }
-
         if proto.is_empty() {
             proto.push_str("N/A");
         }
-        if ports.is_empty() {
-            ports.push_str("N/A");
+        if ports_str.is_empty() {
+            ports_str.push_str("N/A");
         }
 
         let mut path = match e.event_type {
@@ -127,13 +114,13 @@ impl BSProcess {
 
         match target {
             "event" => {
-                info!(target: "event", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "event", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips_str, ports = ports_str, action = format!("{:?}", self.action));
             }
             "alert" => {
-                info!(target: "alert", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "alert", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips_str, ports = ports_str, action = format!("{:?}", self.action));
             }
             "error" => {
-                info!(target: "error", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips, ports = ports, action = format!("{:?}", self.action));
+                info!(target: "error", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips_str, ports = ports_str, action = format!("{:?}", self.action));
             }
             _ => (),
         }

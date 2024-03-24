@@ -1,3 +1,4 @@
+mod cloudevents;
 mod logs;
 mod mqtt;
 

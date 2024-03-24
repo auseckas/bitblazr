@@ -29,6 +29,9 @@ no-std-net = "0.6"
 paho-mqtt = { version = "0.12", features=["vendored-ssl"] }
 clap = "4.5"
 names = { version = "0.14", default-features = false }
+cloudevents-sdk = "0.7"
+rand = "0.8"
+hex = "0.4"
 
 [[bin]]
 name = "bitblazr"

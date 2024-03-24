@@ -1,3 +1,4 @@
+use super::cloudevents::CloudEventsLayer;
 use super::mqtt::MqttLogger;
 use crate::config::{ShieldConfig, ShieldLogEntry};
 use crate::errors::BSError;
@@ -18,7 +19,7 @@ macro_rules! parse_filter {
 }
 
 macro_rules! parse_layer {
-    ($layers:expr, $writer:expr, $format:expr, $filter:expr) => {{
+    ($layers:expr, $writer:expr, $format:expr, $filter:expr, $sensor_name:expr) => {{
         let s_format = match $format {
             Some(f) => f.as_str(),
             None => "full",
@@ -45,6 +46,10 @@ macro_rules! parse_layer {
                         .json()
                         .flatten_event(true),
                 );
+                parse_filter!($layers, layer, $filter);
+            }
+            "cloudevents" => {
+                let layer = CloudEventsLayer::new($sensor_name, $writer);
                 parse_filter!($layers, layer, $filter);
             }
             _ => {
@@ -155,7 +160,7 @@ impl BlazrLogs {
             }
 
             let f = filter::filter_fn(move |metadata| !filters.contains(&metadata.target()));
-            parse_layer!(layers, w, &logs_conf.default.format, Some(f));
+            parse_layer!(layers, w, &logs_conf.default.format, Some(f), sensor_name);
         }
 
         if let Some(ref e) = logs_conf.errors {
@@ -164,7 +169,7 @@ impl BlazrLogs {
                 guards.push(guard);
 
                 let f = filter::filter_fn(|metadata| metadata.target() == "error");
-                parse_layer!(layers, w, &e.format, Some(f));
+                parse_layer!(layers, w, &e.format, Some(f), sensor_name);
             }
         }
 
@@ -173,7 +178,7 @@ impl BlazrLogs {
                 let (w, guard) = BlazrLogs::parse_log_entry(&e, sensor_name)?;
                 guards.push(guard);
                 let f = filter::filter_fn(|metadata| metadata.target() == "event");
-                parse_layer!(layers, w, &e.format, Some(f));
+                parse_layer!(layers, w, &e.format, Some(f), sensor_name);
             }
         }
 
@@ -183,7 +188,7 @@ impl BlazrLogs {
                 guards.push(guard);
 
                 let f = filter::filter_fn(|metadata| metadata.target() == "alert");
-                parse_layer!(layers, w, &e.format, Some(f));
+                parse_layer!(layers, w, &e.format, Some(f), sensor_name);
             }
         }
 

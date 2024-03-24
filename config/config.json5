@@ -37,7 +37,7 @@
 //        alerts: {
 //            enable: true,
 //            target: "mqtt",
-//            format: "json",
+//            format: "cloudevents",
 //            mqtt_uri: "mqtts://[unique uri token].s2.eu.hivemq.cloud:8883/mqtt",
 //            mqtt_user: "***",
 //            mqtt_pwd: "***",
