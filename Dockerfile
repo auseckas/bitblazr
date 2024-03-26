@@ -11,7 +11,8 @@ RUN mkdir -m 0755 -p /etc/apt/keyrings/ \
     && apt-get update \
     && mkdir probes
 
-RUN if [ $TARGETARCH = "amd64" || $TARGETARCH = "arm64" ]; then \
+ARG TARGETARCH
+RUN if [ $TARGETARCH = "amd64" ] || [ $TARGETARCH = "arm64" ]; then \
         apt-get install -y clang-18 lldb-18 lld-18 clangd-18 \
     ; fi
 
