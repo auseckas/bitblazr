@@ -10,7 +10,6 @@ use std::time::Instant;
 use tracing::Instrument;
 
 use crate::rules::load_log_rules;
-use crossbeam_channel;
 use moka::future::Cache;
 use std::sync::Arc;
 use tracing::{debug, trace, error, info, warn};
@@ -18,6 +17,7 @@ use no_std_net::{IpAddr, Ipv4Addr};
 use names::Generator;
 use std::collections::HashSet;
 use crate::utils::vec_to_string;
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub struct BSProtoPort {
@@ -128,7 +128,7 @@ impl BSProcess {
 }
 
 pub struct BSProcessTracker {
-    pub snd: crossbeam_channel::Sender<BlazrEvent>,
+    pub snd: mpsc::Sender<BlazrEvent>,
     sensor_name: String
 }
 
@@ -141,7 +141,7 @@ impl BSProcessTracker {
             false => name.to_string()
         };
 
-        let (snd, recv) = crossbeam_channel::bounded::<BlazrEvent>(100_000);
+        let (snd, recv) = mpsc::channel::<BlazrEvent>(100_000);
 
         let bes = BSProcessTracker { snd, sensor_name };
         bes.run(recv, ctx_tracker.clone())?;
@@ -172,7 +172,7 @@ impl BSProcessTracker {
 
     pub fn run(
         &self,
-        recv: crossbeam_channel::Receiver<BlazrEvent>,
+        mut recv: mpsc::Receiver<BlazrEvent>,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
         // Eviction listener is used to log events that match log rules but not any kernel rules
@@ -203,8 +203,8 @@ impl BSProcessTracker {
             let mut event_tracker = 0;
 
             loop {
-                match recv.recv() {
-                    Ok(event) => {
+                match recv.recv().await {
+                    Some(event) => {
                         match event.event_type {
                             BlazrEventType::Exit => {
                                 // Remove from parent record and invalidate
@@ -466,8 +466,8 @@ impl BSProcessTracker {
                             .instrument(tracing::info_span!("BitBlazr"))
                             .await;
                     }
-                    Err(e) => {
-                        error!("Event loop stopped with error: {}", e);
+                    None => {
+                        error!(target: "error", "Event loop stopped!");
                         break;
                     }
                 }

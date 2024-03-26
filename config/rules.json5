@@ -1,7 +1,7 @@
 // To accompodate for eBPF restrictions, kernel rules are rather restrictive, you can only 'allow' or 'block'.
 // For comparing integers you can only use 'eq' and 'neq', for strings additional two methods are available:
 //  'starts_with' and 'ends_with'.
-// All matches will be logged by default
+// All rule matches will be logged by default
 // These are example rules, create rules for your own enviornment or reach out to us for commercial rules
 { kernel:  [
     // Block attempts to bind to sockets that are not on port 80 or 443
@@ -48,7 +48,7 @@
         rules: {
             path: [{ends_with: "sed"}]
         },
-        action: 'block'
+        action: 'allow'
     },
     // Example of rule monitoring egress connections
     {

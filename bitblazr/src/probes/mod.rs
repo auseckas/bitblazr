@@ -5,8 +5,8 @@ pub mod tracepoints;
 use crate::ContextTracker;
 use aya::Bpf;
 use bitblazr_common::models::BlazrEvent;
-use crossbeam_channel::Sender;
 use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
 
 pub(crate) trait Probe {
     fn init(

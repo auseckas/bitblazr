@@ -6,6 +6,7 @@ use aho_corasick::AhoCorasick;
 use bitblazr_common::utils;
 use bitblazr_common::BlazrEvent;
 use std::collections::HashMap;
+use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone, Copy)]
@@ -110,7 +111,7 @@ impl ContextTracker {
         }
     }
 
-    pub fn process_event(&self, be: &mut BlazrEvent, snd: crossbeam_channel::Sender<PsLabels>) {
+    pub fn process_event(&self, be: &mut BlazrEvent, snd: mpsc::Sender<PsLabels>) {
         let mut event_ctx = [0i64; 5];
         let mut ctx = self
             .check_process_label(utils::str_from_buf_nul(&be.path).unwrap_or(""))
@@ -143,23 +144,31 @@ impl ContextTracker {
             be.labels
         );
 
+        let mut parent_labels = None;
         if propogate_to_parent {
-            if let Err(e) = snd.send(PsLabels {
+            parent_labels = Some(PsLabels {
                 ppid: be.ppid.unwrap_or(0),
                 pid: be.ppid.unwrap_or(0),
                 labels: be.labels,
-            }) {
-                warn!("Could not send Labels. Err: {}", e);
-            }
+            });
         }
-
-        if let Err(e) = snd.send(PsLabels {
+        let child_labels = PsLabels {
             ppid: be.ppid.unwrap_or(0),
             pid: be.pid,
             labels: be.labels,
-        }) {
-            warn!("Could not send Labels. Err: {}", e);
-        }
+        };
+
+        tokio::spawn(async move {
+            if let Some(pl) = parent_labels {
+                if let Err(e) = snd.send(pl).await {
+                    warn!("Could not send Labels. Err: {}", e);
+                }
+            }
+
+            if let Err(e) = snd.send(child_labels).await {
+                warn!("Could not send Labels. Err: {}", e);
+            }
+        });
     }
 
     pub fn get_labels(&self) -> &HashMap<String, i64> {

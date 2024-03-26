@@ -13,18 +13,18 @@ use bitblazr_common::models::BlazrEvent;
 use bitblazr_common::rules::{BlazrOp, BlazrRule, BlazrRuleClass, BlazrRulesKey, TrieKey};
 use bitblazr_common::{BlazrAction, BlazrEventType, OPS_PER_RULE, RULES_PER_KEY};
 use bytes::BytesMut;
-use crossbeam_channel;
 use std::collections::HashMap;
 use std::result::Result;
 use std::sync::Arc;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{debug, error, warn};
 
 pub struct LsmTracepoints {
-    labels_snd: crossbeam_channel::Sender<PsLabels>,
+    labels_snd: Sender<PsLabels>,
 }
 
 impl LsmTracepoints {
-    pub(crate) fn new(labels_snd: crossbeam_channel::Sender<PsLabels>) -> LsmTracepoints {
+    pub(crate) fn new(labels_snd: Sender<PsLabels>) -> LsmTracepoints {
         LsmTracepoints { labels_snd }
     }
 
@@ -32,7 +32,7 @@ impl LsmTracepoints {
     fn run(
         &self,
         bpf: &mut Bpf,
-        snd: crossbeam_channel::Sender<BlazrEvent>,
+        snd: Sender<BlazrEvent>,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
         let mut tp_array: AsyncPerfEventArray<_> =
@@ -61,7 +61,7 @@ impl LsmTracepoints {
 
                         th_ctx_tracker.process_event(be, th_labels_snd.clone());
 
-                        if let Err(e) = thread_snd.send(be.clone()) {
+                        if let Err(e) = thread_snd.send(be.clone()).await {
                             warn!("Could not send Tracepoints event. Err: {}", e);
                         }
                     }
@@ -145,16 +145,22 @@ impl LsmTracepoints {
     }
 
     // Propogate labels back to kernel space
-    pub(crate) fn run_labels_loop(mut bpf: Bpf, recv: crossbeam_channel::Receiver<PsLabels>) {
+    pub(crate) fn run_labels_loop(mut bpf: Bpf, mut recv: Receiver<PsLabels>) {
         tokio::spawn(async move {
             let mut labels_map: AyaHashMap<&mut MapData, u32, [i64; 5]> =
                 AyaHashMap::try_from(bpf.map_mut("LSM_CTX_LABELS").unwrap()).unwrap();
 
             loop {
-                match recv.recv() {
-                    Ok(ps_labels) => {
+                match recv.recv().await {
+                    Some(ps_labels) => {
                         if ps_labels.pid == 0 {
                             continue;
+                        } else if ps_labels.ppid == u32::MAX
+                            && ps_labels.pid == u32::MAX
+                            && ps_labels.labels[0] == i64::MAX
+                        {
+                            // Shutdown message received
+                            break;
                         }
                         let mut new_labels = Vec::with_capacity(5);
                         let parent_labels = labels_map.get(&ps_labels.ppid, 0).unwrap_or([0; 5]);
@@ -187,8 +193,8 @@ impl LsmTracepoints {
                             error!("run_labels_loop: Could not insert new labels. Error: {}", e);
                         }
                     }
-                    Err(e) => {
-                        error!("run_labels_loop: Error in labels loop. E: {}", e);
+                    None => {
+                        error!("run_labels_loop: Error in labels loop.");
                         break;
                     }
                 }
@@ -201,7 +207,7 @@ impl Probe for LsmTracepoints {
     fn init(
         &self,
         bpf: &mut Bpf,
-        snd: crossbeam_channel::Sender<BlazrEvent>,
+        snd: Sender<BlazrEvent>,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
         let btf = Btf::from_sys_fs()?;

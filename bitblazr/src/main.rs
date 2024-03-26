@@ -1,4 +1,3 @@
-extern crate crossbeam_channel;
 extern crate serde_derive;
 extern crate serde_json;
 
@@ -28,6 +27,7 @@ use logs::BlazrLogs;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 #[derive(Parser, Debug)]
@@ -77,7 +77,7 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     tp_arch.set(0, arch, 0)?;
 
-    let (labels_snd, labels_recv) = crossbeam_channel::bounded::<PsLabels>(100);
+    let (labels_snd, labels_recv) = mpsc::channel::<PsLabels>(100);
 
     if Path::new("/sys/kernel/btf/vmlinux").exists() && config.features.tracepoints {
         bpf_loader.attach(
@@ -128,6 +128,15 @@ async fn main() -> Result<(), anyhow::Error> {
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
+    // Send shutdown message
+    labels_snd
+        .send(PsLabels {
+            ppid: u32::MAX,
+            pid: u32::MAX,
+            labels: [i64::MAX; 5],
+        })
+        .await
+        .unwrap();
     info!("Exiting...");
 
     Ok(())

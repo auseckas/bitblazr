@@ -11,20 +11,19 @@ use bitblazr_common::models::BlazrEvent;
 use bytes::BytesMut;
 use std::result::Result;
 use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::Sender;
 use tokio::time::{sleep_until, Duration, Instant};
 use tracing::warn;
 
 pub(crate) struct BtfTracepoints {
-    labels_snd: crossbeam_channel::Sender<PsLabels>,
+    labels_snd: mpsc::Sender<PsLabels>,
     max_events: Arc<u32>,
     backoff: Arc<u32>,
 }
 
 impl BtfTracepoints {
-    pub fn new(
-        config: &ShieldConfig,
-        labels_snd: crossbeam_channel::Sender<PsLabels>,
-    ) -> BtfTracepoints {
+    pub fn new(config: &ShieldConfig, labels_snd: mpsc::Sender<PsLabels>) -> BtfTracepoints {
         let max_events = Arc::new(config.limits.max_events);
         let backoff = Arc::new(config.limits.backoff);
         BtfTracepoints {
@@ -38,7 +37,7 @@ impl BtfTracepoints {
     fn run(
         &self,
         bpf: &mut Bpf,
-        snd: crossbeam_channel::Sender<BlazrEvent>,
+        snd: Sender<BlazrEvent>,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
         let mut tp_array: AsyncPerfEventArray<_> =
@@ -92,7 +91,7 @@ impl BtfTracepoints {
 
                         th_ctx_tracker.process_event(be, th_labels_snd.clone());
 
-                        if let Err(e) = thread_snd.send(be.clone()) {
+                        if let Err(e) = thread_snd.send(be.clone()).await {
                             warn!("Could not send Tracepoints event. Err: {}", e);
                         }
                     }
@@ -115,7 +114,7 @@ impl Probe for BtfTracepoints {
     fn init(
         &self,
         bpf: &mut Bpf,
-        snd: crossbeam_channel::Sender<BlazrEvent>,
+        snd: Sender<BlazrEvent>,
         ctx_tracker: Arc<ContextTracker>,
     ) -> Result<(), anyhow::Error> {
         self.run(bpf, snd, ctx_tracker)?;
