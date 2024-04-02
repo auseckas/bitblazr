@@ -1,7 +1,7 @@
 {
     features: {
         // LSM, blocking functionality, with this off the kernel rules won't work
-        lsm: true,
+        lsm: false,
         // Tracepoints, used for monitoring
         tracepoints: true
 

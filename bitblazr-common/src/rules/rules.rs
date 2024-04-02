@@ -175,20 +175,12 @@ pub enum BlazrVarType {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct BlazrVar {
-    pub var_type: BlazrVarType,
-    pub int: i64,
-    pub sbuf: [u8; 25],
-    pub sbuf_len: u16,
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
 pub struct BlazrOp {
     pub target: BlazrRuleTarget,
     pub negate: bool,
     pub command: BlazrRuleCommand,
-    pub var: BlazrVar,
+    pub var_type: BlazrVarType,
+    pub var_len: u16,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -217,15 +209,23 @@ pub struct TrieKey {
     pub ip: u32,
 }
 
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct SearchKey {
+    pub rule_id: u32,
+    pub op_id: i32,
+    pub buf: [u8; 52],
+}
+
 #[cfg(feature = "user")]
 mod maps {
     use crate::models::BlazrArch;
-    use crate::rules::{BlazrOp, BlazrRule, BlazrRulesKey, BlazrVar, TrieKey};
+    use crate::rules::{BlazrOp, BlazrRule, BlazrRulesKey, SearchKey, TrieKey};
     use aya::Pod;
     unsafe impl Pod for BlazrRule {}
     unsafe impl Pod for BlazrRulesKey {}
     unsafe impl Pod for BlazrOp {}
-    unsafe impl Pod for BlazrVar {}
     unsafe impl Pod for BlazrArch {}
     unsafe impl Pod for TrieKey {}
+    unsafe impl Pod for SearchKey {}
 }

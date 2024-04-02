@@ -7,13 +7,42 @@ use no_std_net::Ipv4Addr;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::env;
+use std::mem::size_of;
 use std::str::FromStr;
 use tracing::debug;
 
+fn get_trie_key(
+    rule_id: u32,
+    op_id: i32,
+    buf: &[u8],
+    buf_len: usize,
+) -> Result<Key<SearchKey>, anyhow::Error> {
+    let mut search_buf = [0; 52];
+
+    for (i, ch) in buf.iter().enumerate() {
+        search_buf[i] = *ch;
+    }
+
+    Ok(Key::new(
+        64 + (buf_len as u32 * 8),
+        SearchKey {
+            rule_id: (rule_id + 1).to_be(),
+            op_id: op_id.to_be(),
+            buf: search_buf,
+        },
+    ))
+}
+
+struct BlazrVar {
+    pub var_type: BlazrVarType,
+    pub var_len: u16,
+}
+
 fn value_to_var(
-    comm: &BlazrRuleCommand,
+    rule_id: usize,
     target: &BlazrRuleTarget,
     ip_ranges: &mut Vec<Key<TrieKey>>,
+    search_keys: &mut Vec<Key<SearchKey>>,
     op_id: usize,
     src: &mut Value,
 ) -> Result<BlazrVar, anyhow::Error> {
@@ -29,12 +58,16 @@ fn value_to_var(
                     .into());
                 }
             };
+            search_keys.push(get_trie_key(
+                rule_id as u32,
+                op_id as i32,
+                &port.to_be_bytes(),
+                size_of::<i64>(),
+            )?);
 
             BlazrVar {
                 var_type: BlazrVarType::Int,
-                int: port,
-                sbuf: [0; 25],
-                sbuf_len: 0,
+                var_len: size_of::<i64>() as u16,
             }
         }
         BlazrRuleTarget::Path => {
@@ -48,36 +81,27 @@ fn value_to_var(
                     .into());
                 }
             };
-            if path.len() > 25 {
+            if path.len() > 50 {
                 return Err(BSError::InvalidAttribute {
                     attribute: "path",
                     value: format!(
-                        "Path string used in rules should not exceed 25 chars. Path: {:?}",
+                        "Path string used in rules should not exceed 50 chars. Path: {:?}",
                         path
                     ),
                 }
                 .into());
             }
 
-            let mut sbuf = [0; 25];
-            let sbuf_len = path.len() as u16;
-
-            // Reverse buffer for EndsWith, to make verifier on the other side happy
-            if matches!(comm, BlazrRuleCommand::EndsWith) {
-                for (i, ch) in path.as_bytes().iter().rev().enumerate() {
-                    sbuf[i] = *ch;
-                }
-            } else {
-                for (i, ch) in path.as_bytes().iter().enumerate() {
-                    sbuf[i] = *ch;
-                }
-            }
+            search_keys.push(get_trie_key(
+                rule_id as u32,
+                op_id as i32,
+                path.as_bytes(),
+                path.len(),
+            )?);
 
             BlazrVar {
                 var_type: BlazrVarType::String,
-                int: 0,
-                sbuf: sbuf,
-                sbuf_len: sbuf_len,
+                var_len: path.len() as u16,
             }
         }
         BlazrRuleTarget::IpVersion => {
@@ -102,12 +126,16 @@ fn value_to_var(
                     .into());
                 }
             };
+            search_keys.push(get_trie_key(
+                rule_id as u32,
+                op_id as i32,
+                &ip_version.to_be_bytes(),
+                size_of::<i64>(),
+            )?);
 
             BlazrVar {
                 var_type: BlazrVarType::Int,
-                int: ip_version,
-                sbuf: [0; 25],
-                sbuf_len: 0,
+                var_len: size_of::<i64>() as u16,
             }
         }
         BlazrRuleTarget::IpType => {
@@ -130,11 +158,16 @@ fn value_to_var(
                 .into());
             }
 
+            search_keys.push(get_trie_key(
+                rule_id as u32,
+                op_id as i32,
+                &(ip_type as i64).to_be_bytes(),
+                size_of::<i64>(),
+            )?);
+
             BlazrVar {
                 var_type: BlazrVarType::Int,
-                int: ip_type as i64,
-                sbuf: [0; 25],
-                sbuf_len: 0,
+                var_len: size_of::<i64>() as u16,
             }
         }
         BlazrRuleTarget::IpProto => {
@@ -157,11 +190,16 @@ fn value_to_var(
                 .into());
             }
 
+            search_keys.push(get_trie_key(
+                rule_id as u32,
+                op_id as i32,
+                &(ip_proto as i64).to_be_bytes(),
+                size_of::<i64>(),
+            )?);
+
             BlazrVar {
                 var_type: BlazrVarType::Int,
-                int: ip_proto as i64,
-                sbuf: [0; 25],
-                sbuf_len: 0,
+                var_len: size_of::<i64>() as u16,
             }
         }
         BlazrRuleTarget::IpAddr => {
@@ -227,9 +265,7 @@ fn value_to_var(
 
             BlazrVar {
                 var_type: BlazrVarType::IpAddr,
-                int: op_id as i64,
-                sbuf: [0; 25],
-                sbuf_len: 0,
+                var_len: 0,
             }
         }
         _ => {
@@ -245,8 +281,10 @@ fn value_to_var(
 }
 
 fn parse_ops(
+    rule_id: usize,
     shield_ops: &mut Vec<BlazrOp>,
     ip_ranges: &mut Vec<Key<TrieKey>>,
+    search_keys: &mut Vec<Key<SearchKey>>,
     target: &BlazrRuleTarget,
     labels: &HashMap<String, i64>,
     cs: &mut Value,
@@ -274,8 +312,10 @@ fn parse_ops(
                     }
                     if matches!(comm, BlazrRuleCommand::Not) {
                         let ids = parse_ops(
+                            rule_id,
                             shield_ops,
                             ip_ranges,
+                            search_keys,
                             target,
                             labels,
                             &mut Value::from(vec![v.clone()]),
@@ -288,13 +328,14 @@ fn parse_ops(
                     }
 
                     let idx = shield_ops.len();
-                    let var = value_to_var(&comm, target, ip_ranges, idx, v)?;
+                    let var = value_to_var(rule_id, target, ip_ranges, search_keys, idx, v)?;
 
                     let op = BlazrOp {
                         target: *target,
                         negate: false,
                         command: comm,
-                        var: var,
+                        var_type: var.var_type,
+                        var_len: var.var_len,
                     };
                     shield_ops.push(op);
                     ops_idx.push(idx as i32);
@@ -320,6 +361,7 @@ pub(crate) fn load_rules_from_config(
     (
         HashMap<BlazrRulesKey, Vec<BlazrRule>>,
         Vec<BlazrOp>,
+        Vec<Key<SearchKey>>,
         Vec<Key<TrieKey>>,
     ),
     anyhow::Error,
@@ -351,6 +393,7 @@ pub(crate) fn load_rules(
     (
         HashMap<BlazrRulesKey, Vec<BlazrRule>>,
         Vec<BlazrOp>,
+        Vec<Key<SearchKey>>,
         Vec<Key<TrieKey>>,
     ),
     anyhow::Error,
@@ -358,6 +401,7 @@ pub(crate) fn load_rules(
     let mut shield_rules: HashMap<BlazrRulesKey, Vec<BlazrRule>> = HashMap::new();
     let mut shield_ops: Vec<BlazrOp> = Vec::new();
     let mut ip_ranges: Vec<Key<TrieKey>> = Vec::new();
+    let mut search_keys: Vec<Key<SearchKey>> = Vec::new();
 
     if let Some(defs) = rules.get_mut(rules_section) {
         for (rule_id, mut rule) in defs
@@ -415,8 +459,10 @@ pub(crate) fn load_rules(
                     .into());
                 }
                 shield_ops_idx.append(&mut parse_ops(
+                    rule_id,
                     &mut shield_ops,
                     &mut ip_ranges,
+                    &mut search_keys,
                     &target,
                     labels,
                     rs,
@@ -451,7 +497,7 @@ pub(crate) fn load_rules(
         }
     }
 
-    Ok((shield_rules, shield_ops, ip_ranges))
+    Ok((shield_rules, shield_ops, search_keys, ip_ranges))
 }
 
 #[cfg(test)]
@@ -497,7 +543,7 @@ mod tests {
                 .collect::<HashMap<String, Value>>(),
             _ => panic!("Rules test definition is not an object"),
         };
-        let (shield_rules, _shield_ops, _) = load_rules("kernel", &labels, rules_obj).unwrap();
+        let (shield_rules, _shield_ops, _, _) = load_rules("kernel", &labels, rules_obj).unwrap();
         assert_eq!(shield_rules.iter().next().unwrap().1[0].ops[0], 0);
         assert_eq!(shield_rules.iter().next().unwrap().1[0].ops[1], 1);
     }
@@ -582,7 +628,7 @@ mod tests {
                 .collect::<HashMap<String, Value>>(),
             _ => panic!("Rules test definition is not an object"),
         };
-        let (shield_rules, _shield_ops, _) = load_rules("kernel", &labels, rules_obj).unwrap();
+        let (shield_rules, _shield_ops, _, _) = load_rules("kernel", &labels, rules_obj).unwrap();
 
         assert!(shield_rules
             .values()
