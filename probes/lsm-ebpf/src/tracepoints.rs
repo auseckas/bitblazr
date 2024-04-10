@@ -324,6 +324,19 @@ fn process_op(_ctx: &LsmContext, rule_id: u16, op_id: i32, var: &RuleVars) -> Re
     Ok(result)
 }
 
+// use crate::vmlinux::bpf_map;
+// use aya_ebpf::helpers::bpf_for_each_map_elem;
+// use core::ffi::c_void;
+// use core::ptr::addr_of;
+// extern "C" fn callback_fn(
+//     map: *mut bpf_map,
+//     key: *mut c_void,
+//     val: *mut c_void,
+//     ctx: *mut c_void,
+// ) -> i64 {
+//     0
+// }
+
 fn process_ops(
     ctx: &LsmContext,
     key: &BlazrRulesKey,
@@ -334,6 +347,17 @@ fn process_ops(
         hits: [0; 5],
         action: BlazrAction::Allow,
     };
+
+    // let func_ptr = callback_fn as *mut c_void;
+    // let this_key = 0u32;
+    // unsafe {
+    //     bpf_for_each_map_elem(
+    //         addr_of!(LSM_RULE_OPS) as *mut c_void,
+    //         func_ptr,
+    //         this_key as *mut c_void,
+    //         0,
+    //     );
+    // }
 
     if let Some(rules) = unsafe { LSM_RULES.get(key) } {
         if rules.len() > RULES_PER_KEY {

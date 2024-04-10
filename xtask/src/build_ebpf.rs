@@ -63,7 +63,11 @@ fn build_probe(path: &str, opts: &Options) -> Result<(), anyhow::Error> {
         .env_remove("RUSTUP_TOOLCHAIN")
         .env(
             "RUSTFLAGS",
-            format!("--cfg bpf_target_arch=\"{}\"", std::env::consts::ARCH),
+            format!(
+                // "-C debuginfo=1 -C link-arg=--btf --cfg bpf_target_arch=\"{}\"",
+                "--cfg bpf_target_arch=\"{}\"",
+                std::env::consts::ARCH
+            ),
         )
         .args(&args)
         .status()

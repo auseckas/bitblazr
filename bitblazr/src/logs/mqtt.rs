@@ -36,6 +36,7 @@ impl MqttLogger {
 
         let mut client_opts_builder = CreateOptionsBuilder::new()
             .mqtt_version(MQTT_VERSION_5)
+            .send_while_disconnected(true)
             .server_uri(uri);
 
         if !sensor_name.is_empty() {
@@ -55,7 +56,9 @@ impl MqttLogger {
 
         let client = Client::new(client_opts)?;
 
-        client.connect(connect_ops).unwrap();
+        if let Err(e) = client.connect(connect_ops) {
+            error!(target: "error", "MQTT client could not connect to broker. Err: {}", e);
+        }
 
         Ok(MqttLogger {
             client,
