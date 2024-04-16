@@ -12,4 +12,4 @@ if ! grep -qs 'securityfs' /proc/mounts; then
     echo "Could not mount in securityfs. This could will impact LSM functionality. Please make sure the container was started with --privileged flag."
 fi
 
-CONFIG_DIR=/app/config RUST_LOG=$log_level /app/bitblazr --name=$name
+CONFIG_DIR=/app/config RUST_LOG=$log_level /app/bitblazr --name=$sensor_name
