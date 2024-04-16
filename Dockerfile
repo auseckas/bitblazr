@@ -67,4 +67,4 @@ VOLUME /app/config
 ENV log_level info
 ENV sensor_name ""
 
-CMD ["bash", "-c", "/app/run.sh ${log_level} ${name}"]
+CMD ["bash", "-c", "/app/run.sh ${log_level} ${sensor_name}"]
