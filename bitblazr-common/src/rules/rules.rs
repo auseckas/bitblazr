@@ -70,6 +70,8 @@ pub enum BlazrRuleTarget {
     IpProto = 4,
     Context = 5,
     IpAddr = 6,
+    ExitCode = 7,
+    RunTime = 8,
 }
 
 impl BlazrRuleVar for BlazrRuleTarget {
@@ -83,6 +85,8 @@ impl BlazrRuleVar for BlazrRuleTarget {
             "ip_proto" => BlazrRuleTarget::IpProto,
             "ip_addr" => BlazrRuleTarget::IpAddr,
             "context" => BlazrRuleTarget::Context,
+            "exit_code" => BlazrRuleTarget::ExitCode,
+            "run_time" => BlazrRuleTarget::RunTime,
             _ => BlazrRuleTarget::Undefined,
         }
     }
@@ -102,6 +106,8 @@ pub enum BlazrRuleCommand {
     EndsWith = 3,
     Not = 4,
     Contains = 5,
+    LessThanOrEqual = 6,
+    GreaterThanOrEqual = 7,
 }
 
 impl BlazrRuleVar for BlazrRuleCommand {
@@ -114,6 +120,8 @@ impl BlazrRuleVar for BlazrRuleCommand {
             "ends_with" => BlazrRuleCommand::EndsWith,
             "not" => BlazrRuleCommand::Not,
             "contains" => BlazrRuleCommand::Contains,
+            "lte" => BlazrRuleCommand::LessThanOrEqual,
+            "gte" => BlazrRuleCommand::GreaterThanOrEqual,
             _ => BlazrRuleCommand::Undefined,
         }
     }

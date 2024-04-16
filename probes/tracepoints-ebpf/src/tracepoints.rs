@@ -95,18 +95,28 @@ fn process_tps(ctx: TracePointContext) -> Result<u32, u32> {
             49 => process_bind(ctx, args, be),
             50 => process_listen(ctx, args, be),
             59 => process_exec(ctx, args, be),
-            60 => process_exit(ctx, args, be),
+            60 | 231 => process_exit(ctx, args, be),
             257 => process_openat(ctx, args, be),
             _ => Ok(0),
         },
         BlazrArch::Aarch64 => match call_id {
             56 => process_openat(ctx, args, be),
-            93 => process_exit(ctx, args, be),
+            93 | 94 => process_exit(ctx, args, be),
             198 => process_socket(ctx, args, be),
             200 => process_bind(ctx, args, be),
             201 => process_listen(ctx, args, be),
             203 => process_connect(ctx, args, be),
             221 => process_exec(ctx, args, be),
+            _ => Ok(0),
+        },
+        BlazrArch::Arm => match call_id {
+            322 => process_openat(ctx, args, be),
+            1 | 248 => process_exit(ctx, args, be),
+            281 => process_socket(ctx, args, be),
+            282 => process_bind(ctx, args, be),
+            284 => process_listen(ctx, args, be),
+            283 => process_connect(ctx, args, be),
+            11 => process_exec(ctx, args, be),
             _ => Ok(0),
         },
         _ => Ok(0),
@@ -131,9 +141,10 @@ fn process_exec(ctx: TracePointContext, args: [u64; 6], be: &mut BlazrEvent) -> 
     Ok(0)
 }
 
-fn process_exit(ctx: TracePointContext, _args: [u64; 6], be: &mut BlazrEvent) -> Result<u32, u32> {
+fn process_exit(ctx: TracePointContext, args: [u64; 6], be: &mut BlazrEvent) -> Result<u32, u32> {
     be.event_type = BlazrEventType::Exit;
     be.log_class = BlazrRuleClass::File;
+    be.exit_code = args[0] as u8;
     unsafe {
         TP_BUFFER.output(&ctx, be.to_bytes(), 0);
     }

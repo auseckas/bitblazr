@@ -15,6 +15,7 @@ pub enum BlazrArch {
     Undefined = -1,
     X86_64 = 0,
     Aarch64 = 1,
+    Arm = 2,
 }
 
 impl BlazrRuleVar for BlazrArch {
@@ -23,6 +24,7 @@ impl BlazrRuleVar for BlazrArch {
         match s.trim() {
             "x86_64" => BlazrArch::X86_64,
             "aarch64" => BlazrArch::Aarch64,
+            "arm" => BlazrArch::Arm,
             _ => BlazrArch::Undefined,
         }
     }
@@ -113,6 +115,7 @@ pub struct BlazrEvent {
     pub path_len: u16,
     pub argv_count: u8,
     pub argv: [[u8; 200]; crate::ARGV_COUNT],
+    pub exit_code: u8,
 }
 
 impl BlazrEvent {

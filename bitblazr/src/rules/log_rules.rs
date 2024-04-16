@@ -1,8 +1,8 @@
 use super::get_field;
+use crate::tracker::tracker::BSProcess;
 use crate::utils::get_hash;
 use crate::BSError;
 use aho_corasick::AhoCorasick;
-use bitblazr_common::BlazrEvent;
 use bitblazr_common::{rules::*, BlazrEventType};
 use config::{Config, File, FileFormat};
 use serde_json::{Map, Value};
@@ -24,18 +24,32 @@ struct LogOp {
     pub var: LogVar,
 }
 
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct BlazrRuleResult {
+    pub id: i64,
+    pub description: Option<String>,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct BlazrLogResult {
     pub ignore: bool,
     pub log: bool,
     pub alert: bool,
+    pub results: Vec<BlazrRuleResult>,
+}
+
+#[derive(Debug)]
+struct LogRule {
+    description: Option<String>,
+    ops: Vec<LogOp>,
 }
 
 #[derive(Debug)]
 pub(crate) struct BlazrRuleEngine {
-    ignore: HashMap<i64, Vec<LogOp>>,
-    log: HashMap<i64, Vec<LogOp>>,
-    alert: HashMap<i64, Vec<LogOp>>,
+    ignore: HashMap<i64, Vec<LogRule>>,
+    log: HashMap<i64, Vec<LogRule>>,
+    alert: HashMap<i64, Vec<LogRule>>,
 }
 
 impl BlazrRuleEngine {
@@ -75,40 +89,69 @@ impl BlazrRuleEngine {
         Ok(false)
     }
 
-    fn check_int_var(
-        &self,
-        cmd: &BlazrRuleCommand,
-        left: &LogVar,
-        right: i64,
-    ) -> Result<bool, anyhow::Error> {
-        let r = match left {
-            LogVar::Numbers(ns) => {
-                let mut matched = false;
-                for n in ns {
-                    if *n == right {
-                        matched = true;
-                        break;
+    fn check_int_var(&self, cmd: &BlazrRuleCommand, right: &LogVar, left: i64) -> bool {
+        let r = match right {
+            LogVar::Numbers(ns) => match *cmd {
+                BlazrRuleCommand::Eq | BlazrRuleCommand::Neq => {
+                    let mut matched = false;
+                    for n in ns {
+                        if left == *n {
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if matches!(*cmd, BlazrRuleCommand::Eq) {
+                        matched
+                    } else {
+                        !matched
                     }
                 }
-                match *cmd {
-                    BlazrRuleCommand::Eq => matched,
-                    BlazrRuleCommand::Neq => !matched,
-                    _ => false,
+                BlazrRuleCommand::LessThanOrEqual => {
+                    let mut matched = false;
+                    for n in ns {
+                        if left <= *n {
+                            matched = true;
+                            break;
+                        }
+                    }
+                    matched
                 }
-            }
+                BlazrRuleCommand::GreaterThanOrEqual => {
+                    let mut matched = false;
+                    for n in ns {
+                        if left >= *n {
+                            matched = true;
+                            break;
+                        }
+                    }
+                    matched
+                }
+                _ => false,
+            },
             _ => false,
         };
 
-        Ok(r)
+        r
     }
 
-    fn check_op(&self, op: &LogOp, e: &BlazrEvent) -> Result<bool, anyhow::Error> {
+    fn check_op(&self, op: &LogOp, p: &BSProcess) -> Result<bool, anyhow::Error> {
         let mut result = match op.target {
-            BlazrRuleTarget::Path => self.check_str_var(&op.command, &op.var, &e.path)?,
-            BlazrRuleTarget::Port => self.check_int_var(&op.command, &op.var, e.port as i64)?,
-            BlazrRuleTarget::IpProto => {
-                self.check_int_var(&op.command, &op.var, e.protocol as i64)?
+            BlazrRuleTarget::Path => self.check_str_var(&op.command, &op.var, p.path.as_bytes())?,
+            BlazrRuleTarget::Port => p
+                .proto_port
+                .iter()
+                .map(|pp| pp.port)
+                .any(|port| self.check_int_var(&op.command, &op.var, port as i64)),
+            BlazrRuleTarget::IpProto => p
+                .proto_port
+                .iter()
+                .map(|pp| pp.proto)
+                .any(|proto| self.check_int_var(&op.command, &op.var, proto as i64)),
+
+            BlazrRuleTarget::ExitCode => {
+                self.check_int_var(&op.command, &op.var, p.exit_code as i64)
             }
+            BlazrRuleTarget::RunTime => self.check_int_var(&op.command, &op.var, p.run_time as i64),
             BlazrRuleTarget::Context => {
                 if let LogVar::String((patterns, _)) = &op.var {
                     let pats: Vec<i64> = patterns.iter().map(|s| get_hash(s) as i64).collect();
@@ -117,7 +160,7 @@ impl BlazrRuleEngine {
                         matched = true;
                     }
                     for pat in pats {
-                        if !e.labels.contains(&pat) {
+                        if !p.context.contains(&pat) {
                             matched = false;
                             break;
                         }
@@ -140,36 +183,60 @@ impl BlazrRuleEngine {
     fn check_map(
         &self,
         key: i64,
-        map: &HashMap<i64, Vec<LogOp>>,
-        e: &BlazrEvent,
-    ) -> Result<bool, anyhow::Error> {
-        if let Some(ops) = map.get(&key) {
-            for op in ops {
-                if !self.check_op(op, e)? {
-                    return Ok(false);
+        map: &HashMap<i64, Vec<LogRule>>,
+        p: &BSProcess,
+    ) -> Result<Vec<BlazrRuleResult>, anyhow::Error> {
+        let mut results = Vec::new();
+        if let Some(rules) = map.get(&key) {
+            for (i, rule) in rules.iter().enumerate() {
+                let mut matched = true;
+                for op in rule.ops.iter() {
+                    if !self.check_op(op, p)? {
+                        matched = false;
+                        break;
+                    }
                 }
+                if !matched {
+                    continue;
+                }
+                results.push(BlazrRuleResult {
+                    id: i as i64,
+                    description: rule.description.clone(),
+                });
             }
-            return Ok(true);
         }
 
-        Ok(false)
+        Ok(results)
     }
 
-    pub fn check_rules(&self, e: &BlazrEvent) -> Result<BlazrLogResult, anyhow::Error> {
+    // We want class and type from individual event but actual matching should be against rolled up process record
+    pub fn check_rules(
+        &self,
+        log_class: &BlazrRuleClass,
+        event_type: &BlazrEventType,
+        p: &BSProcess,
+    ) -> Result<BlazrLogResult, anyhow::Error> {
         let mut log_result = BlazrLogResult::default();
 
-        debug!(
-            "Log class: {:?}, event type: {:?}",
-            &e.log_class, &e.event_type
-        );
-        let key = self.get_op_key(&e.log_class, &e.event_type);
-        log_result.ignore = self.check_map(key, &self.ignore, e)?;
-        if log_result.ignore {
+        debug!("Log class: {:?}, event type: {:?}", log_class, event_type);
+        let key = self.get_op_key(&log_class, &event_type);
+        log_result.results = self.check_map(key, &self.ignore, p)?;
+        if !log_result.results.is_empty() {
+            log_result.ignore = true;
             return Ok(log_result);
         }
 
-        log_result.log = self.check_map(key, &self.log, e)?;
-        log_result.alert = self.check_map(key, &self.alert, e)?;
+        let mut results = self.check_map(key, &self.log, p)?;
+        if !results.is_empty() {
+            log_result.log = true;
+            log_result.results.append(&mut results);
+        }
+
+        let mut results = self.check_map(key, &self.alert, p)?;
+        if !results.is_empty() {
+            log_result.alert = true;
+            log_result.results.append(&mut results);
+        }
 
         Ok(log_result)
     }
@@ -310,6 +377,12 @@ impl BlazrRuleEngine {
                     let mut dirs = Vec::new();
                     let class: BlazrRuleClass = get_field(rule, "class")?;
                     let event: BlazrEventType = get_field(rule, "event")?;
+                    let description = rule.get("description").and_then(|c| c.as_str()).map(|s| {
+                        let mut desc = s.to_string();
+                        // Truncate description to 25 chars
+                        desc.truncate(25);
+                        desc
+                    });
 
                     for (t, dir) in rule
                         .get_mut("directives")
@@ -330,10 +403,10 @@ impl BlazrRuleEngine {
                         dirs.append(&mut BlazrRuleEngine::parse_dir(&target, labels, dir)?);
                     }
                     let key = bshield_log_rules.get_op_key(&class, &event);
-                    match action.as_str() {
-                        "ignore" => bshield_log_rules.ignore.insert(key, dirs),
-                        "log" => bshield_log_rules.log.insert(key, dirs),
-                        "alert" => bshield_log_rules.alert.insert(key, dirs),
+                    let rule_class = match action.as_str() {
+                        "ignore" => bshield_log_rules.ignore.entry(key).or_insert(Vec::new()),
+                        "log" => bshield_log_rules.log.entry(key).or_insert(Vec::new()),
+                        "alert" => bshield_log_rules.alert.entry(key).or_insert(Vec::new()),
                         _ => {
                             return Err(BSError::InvalidAttribute {
                                 attribute: "action",
@@ -342,6 +415,10 @@ impl BlazrRuleEngine {
                             .into())
                         }
                     };
+                    rule_class.push(LogRule {
+                        description,
+                        ops: dirs,
+                    })
                 }
             } else {
                 return Err(BSError::InvalidAttributeType {
@@ -365,7 +442,7 @@ pub(crate) fn load_rules_from_config(
 
     let rule_config = Config::builder()
         .add_source(File::new(
-            &format!("{}logs.json5", config_dir),
+            &format!("{}alerting_rules.json5", config_dir),
             FileFormat::Json5,
         ))
         .build()?;
@@ -382,35 +459,37 @@ mod tests {
     use serde_json::json;
     use std::collections::HashMap;
 
+    use crate::tracker::tracker::{BSProcess, BSProtoPort};
+
     use super::BlazrRuleEngine;
     use bitblazr_common::{
         rules::{BlazrRuleClass, BlazrRuleTarget},
-        BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType,
+        BlazrAction, BlazrEventType,
     };
-    use no_std_net::{IpAddr as NoStdIpAddr, Ipv4Addr};
+    use chrono::Utc;
+    use no_std_net::IpAddr as NoStdIpAddr;
     use serde_json::Value;
 
-    fn construct_event() -> BlazrEvent {
-        BlazrEvent {
-            class: BlazrEventClass::Tracepoint,
+    fn construct_event() -> BSProcess {
+        BSProcess {
             event_type: BlazrEventType::Open,
-            log_class: BlazrRuleClass::File,
-            ppid: None,
+            created: Utc::now(),
             tgid: 1212,
             pid: 1212,
+            ppid: None,
             uid: 1000,
             gid: 1000,
+            p_path: String::new(),
+            path: String::new(),
+            proto_port: Vec::new(),
             action: BlazrAction::Allow,
-            protocol: 0,
-            ip_addr: NoStdIpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            port: 0,
-            rule_hits: [0; 5],
-            labels: [0; 5],
-            p_path: [0; 255],
-            path: [0; 255],
-            path_len: 0,
-            argv_count: 0,
-            argv: [[0; 200]; bitblazr_common::ARGV_COUNT],
+            rule_hits: Vec::new(),
+            children: Vec::new(),
+            context: Vec::new(),
+            argv: Vec::new(),
+            exit_code: 0,
+            run_time: 0,
+            logged: false,
         }
     }
 
@@ -450,13 +529,16 @@ mod tests {
         };
 
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj);
-
         assert!(re
             .unwrap()
             .log
             .values()
             .next()
             .unwrap()
+            .iter()
+            .next()
+            .unwrap()
+            .ops
             .iter()
             .position(|e| e.target == BlazrRuleTarget::Context)
             .is_some())
@@ -506,6 +588,10 @@ mod tests {
             .next()
             .unwrap()
             .iter()
+            .next()
+            .unwrap()
+            .ops
+            .iter()
             .find(|e| e.target == BlazrRuleTarget::Context)
         {
             assert!(ctx.negate);
@@ -550,16 +636,13 @@ mod tests {
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
         let mut e = construct_event();
-        let path = "/etc/passwd";
-        for (i, ch) in path.as_bytes().into_iter().enumerate() {
-            if i < e.path.len() {
-                e.path[i] = *ch;
-            }
-        }
+        e.path = "/etc/passwd".to_string();
         e.event_type = BlazrEventType::Open;
-        e.labels[0] = 6027998744940314019;
+        e.context.push(6027998744940314019);
 
-        let result = re.check_rules(&e).unwrap();
+        let result = re
+            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .unwrap();
         assert!(result.log);
     }
     #[test]
@@ -652,16 +735,13 @@ mod tests {
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
         let mut e = construct_event();
-        let path = "/etc/shadow";
-        for (i, ch) in path.as_bytes().into_iter().enumerate() {
-            if i < e.path.len() {
-                e.path[i] = *ch;
-            }
-        }
+        e.path = "/etc/shadow".to_string();
         e.event_type = BlazrEventType::Open;
-        e.labels[0] = 6027998744940314019;
+        e.context.push(6027998744940314019);
 
-        let result = re.check_rules(&e).unwrap();
+        let result = re
+            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .unwrap();
         assert!(result.alert);
     }
 
@@ -694,16 +774,13 @@ mod tests {
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
         let mut e = construct_event();
-        let path = "/usr/bin/ls";
-        for (i, ch) in path.as_bytes().into_iter().enumerate() {
-            if i < e.path.len() {
-                e.path[i] = *ch;
-            }
-        }
+        e.path = "/usr/bin/ls".to_string();
         e.event_type = BlazrEventType::Exec;
-        e.labels[0] = 6027998744940314019;
+        e.context.push(6027998744940314019);
 
-        let result = re.check_rules(&e).unwrap();
+        let result = re
+            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .unwrap();
 
         assert!(result.alert);
     }
@@ -742,11 +819,73 @@ mod tests {
         let mut e = construct_event();
 
         e.event_type = BlazrEventType::Connect;
-        e.log_class = BlazrRuleClass::Socket;
-        e.labels[0] = 6027998744940314019;
-        e.port = 53;
+        e.context.push(6027998744940314019);
+        e.proto_port.push(BSProtoPort {
+            proto: 17,
+            port: 53,
+            ip: NoStdIpAddr::from([8, 8, 8, 8]),
+        });
 
-        let result = re.check_rules(&e).unwrap();
+        let result = re
+            .check_rules(&BlazrRuleClass::Socket, &e.event_type, &e)
+            .unwrap();
+
+        assert!(!result.alert);
+    }
+
+    #[test]
+    fn check_exit_code() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+        "ignore": [
+        ],
+        "log":  [
+        ],
+        "alert": [{
+            "class": "file",
+            "event": "exit",
+            "directives": {
+                "path": {
+                    "ends_with": "sshd"
+                },
+                "exit_code": {
+                    "neq": [ 0 ]
+                },
+                "run_time": {
+                    "lte": 1
+                }
+            }
+        }]});
+
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+
+        let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
+
+        let mut e = construct_event();
+
+        e.event_type = BlazrEventType::Connect;
+        e.context.push(6027998744940314019);
+        e.proto_port.push(BSProtoPort {
+            proto: 17,
+            port: 53,
+            ip: NoStdIpAddr::from([8, 8, 8, 8]),
+        });
+        e.path = "/usr/bin/sshd".to_string();
+        e.exit_code = 1;
+        e.run_time = 1;
+
+        let result = re
+            .check_rules(&BlazrRuleClass::Socket, &e.event_type, &e)
+            .unwrap();
 
         assert!(!result.alert);
     }

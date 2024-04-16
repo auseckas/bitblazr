@@ -1,4 +1,4 @@
-use crate::ContextTracker;
+use crate::{rules::log_rules::BlazrRuleResult, ContextTracker};
 use aya::maps::perf::PerfBufferError;
 use bitblazr_common::{
     models::{BlazrAction, BlazrEvent},
@@ -43,11 +43,13 @@ pub struct BSProcess {
     pub children: Vec<u32>, // [pid,...]
     pub context: Vec<i64>,
     pub argv: Vec<String>,
+    pub exit_code: u8,
+    pub run_time: i64,
     pub logged: bool,
 }
 
 impl BSProcess {
-    pub fn emit_log_entry(&mut self, ctx_tracker: Arc<ContextTracker>, target: &str, sensor_name: &str, e: &BlazrEvent, new_info: bool) {
+    pub fn emit_log_entry(&mut self, ctx_tracker: Arc<ContextTracker>, target: &str, sensor_name: &str, e: &BlazrEvent, mut results: Vec<BlazrRuleResult>, new_info: bool) {
         debug!("Logging event path: {:?}, p_path: {:?}, on record: {:?}", str_from_buf_nul(&e.path),str_from_buf_nul(&e.p_path), &self);
         let event_path = match str_from_buf_nul(&e.path) {
             Ok(p) => p,
@@ -112,15 +114,35 @@ impl BSProcess {
 
         self.logged = true;
 
+        let mut exit_code = None;
+        let mut run_time = None;
+        if self.run_time > -1 {
+            exit_code = Some(self.exit_code);
+            run_time = Some(self.run_time);
+        }
+
+        let mut rule_results = None;
+        results = results.into_iter().filter(|r| r.description.is_some()).collect();
+        if !results.is_empty() {
+            let mut rr = results
+                .into_iter()
+                .fold(String::new(), |mut acc, r| {
+                    acc.push_str(&format!("{};", r.description.unwrap_or(String::new())));
+                    acc
+                });
+            rr.pop();
+            rule_results = Some(rr);
+        }
+
         match target {
             "event" => {
-                info!(target: "event", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips_str, ports = ports_str, action = format!("{:?}", self.action));
+                info!(target: "event", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips_str, ports = ports_str, run_time = run_time, exit_code = exit_code, description = rule_results, action = format!("{:?}", self.action));
             }
             "alert" => {
-                info!(target: "alert", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips_str, ports = ports_str, action = format!("{:?}", self.action));
+                info!(target: "alert", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips_str, ports = ports_str, run_time = run_time, exit_code = exit_code, description = rule_results, action = format!("{:?}", self.action));
             }
             "error" => {
-                info!(target: "error", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips_str, ports = ports_str, action = format!("{:?}", self.action));
+                info!(target: "error", sensor_name = sensor_name, event_type = format!("{:?}", e.event_type), context = context, ppid=self.ppid, tgid = self.tgid, pid = self.pid, uid = self.uid, gid = self.gid, command = command, path = path, argv = format!("{:?}", self.argv), proto = proto, ips = ips_str, ports = ports_str, run_time = run_time, exit_code = exit_code, description = rule_results, action = format!("{:?}", self.action));
             }
             _ => (),
         }
@@ -205,25 +227,40 @@ impl BSProcessTracker {
             loop {
                 match recv.recv().await {
                     Some(event) => {
-                        match event.event_type {
-                            BlazrEventType::Exit => {
-                                // Remove from parent record and invalidate
-                                if let Some(ppid) = event.ppid {
-                                    if let Some(mut entry) = thread_tracker.get(&ppid).await {
-                                        let e = Arc::<BSProcess>::make_mut(&mut entry);
-                                        if let Some(pos) =
-                                            e.children.iter().position(|e| *e == event.pid)
-                                        {
-                                            e.children.remove(pos);
+                        if matches!(event.event_type, BlazrEventType::Exit) {
+                            // Remove from parent record and invalidate
+                            if let Some(ppid) = event.ppid {
+                                if let Some(mut entry) = thread_tracker.get(&ppid).await {
+                                    let e = Arc::<BSProcess>::make_mut(&mut entry);
+                                    if let Some(pos) =
+                                        e.children.iter().position(|e| *e == event.pid)
+                                    {
+                                        e.children.remove(pos);
+                                    }
+                                }
+                            }
+
+                            // Check exit_code and run time to see if we need to log the event.
+                            if let Some(mut entry) = thread_tracker.get(&event.pid).await {
+                                let e = Arc::<BSProcess>::make_mut(&mut entry);
+                                e.run_time = Utc::now().timestamp() - e.created.timestamp();
+                                e.exit_code = event.exit_code;
+                                debug!("Runtime: {}, exit_code: {}, type: {:?}, path: {}", e.run_time, e.exit_code, e.event_type, e.path);
+                                if let Ok(log_r) = log_rules.check_rules(&event.log_class, &event.event_type, &e) {
+                                    if !log_r.ignore {
+                                        if matches!(e.action, BlazrAction::Block) || log_r.alert {
+                                            e.emit_log_entry(thread_ctx_tracker.clone(), "alert", th_sensor_name.as_str(), &event, log_r.results, true);
+                                        } else if log_r.log {
+                                            e.emit_log_entry(thread_ctx_tracker.clone(), "event", th_sensor_name.as_str(), &event, log_r.results,  true);
                                         }
                                     }
                                 }
-
-                                thread_tracker.invalidate(&event.pid).await;
-                                continue;
                             }
-                            _ => (),
-                        };
+
+                            thread_tracker.invalidate(&event.pid).await;
+                            continue;
+                        }
+                        
 
                         let mut ppid_context = Vec::new();
                         // If parent process exists, update children
@@ -337,7 +374,7 @@ impl BSProcessTracker {
                                         // We could have multiple events for a single command, so emit log only if we have rule matches
                                         // Otherwise we delay logging, and clean it up every few seconds
                                         // Of course alerts should be sent up right away even if we don't have all the data yet
-                                        if let Ok(log_r) = log_rules.check_rules(&event) {
+                                        if let Ok(log_r) = log_rules.check_rules(&event.log_class, &event.event_type, &e) {
                                             if !log_r.ignore {
                                                 if matches!(e.action, BlazrAction::Block)
                                                     || log_r.alert
@@ -347,9 +384,9 @@ impl BSProcessTracker {
                                                         log_r, e.action, e.path, e.pid
                                                     );
 
-                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "alert", th_sensor_name.as_str(), &event, new_info);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "alert", th_sensor_name.as_str(), &event, log_r.results, new_info);
                                                 } else if log_r.log {
-                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "event", th_sensor_name.as_str(), &event, new_info);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "event", th_sensor_name.as_str(), &event, log_r.results, new_info);
                                                 }
                                             }
                                         }
@@ -384,6 +421,8 @@ impl BSProcessTracker {
                                             children: Vec::new(),
                                             context: Vec::new(),
                                             argv: BSProcessTracker::process_argv(&event),
+                                            run_time: -1,
+                                            exit_code: 0,
                                             logged: false,
                                         };
 
@@ -441,7 +480,7 @@ impl BSProcessTracker {
                                         // We could have multiple events for a single command, so emit log only if we have rule matches
                                         // Otherwise we delay logging, and clean it up every few seconds
                                         // Of course alerts should be sent up right away even if we don't have all the data yet
-                                        if let Ok(log_r) = log_rules.check_rules(&event) {
+                                        if let Ok(log_r) = log_rules.check_rules(&event.log_class, &event.event_type, &e) {
                                             if !log_r.ignore {
                                                 if matches!(e.action, BlazrAction::Block)
                                                     || log_r.alert
@@ -451,9 +490,9 @@ impl BSProcessTracker {
                                                         log_r, e.action, e.path, e.pid
                                                     );
 
-                                                    e.emit_log_entry(thread_ctx_tracker.clone(),  "alert",th_sensor_name.as_str(), &event, false);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(),  "alert",th_sensor_name.as_str(), &event, log_r.results, false);
                                                 } else if log_r.log {
-                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "event", th_sensor_name.as_str(), &event, false);
+                                                    e.emit_log_entry(thread_ctx_tracker.clone(), "event", th_sensor_name.as_str(), &event, log_r.results, false);
                                                 }
                                             }
                                         }

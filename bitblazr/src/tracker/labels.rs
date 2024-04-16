@@ -124,6 +124,8 @@ impl ContextTracker {
                 .unwrap_or(Vec::new());
             if !ctx.is_empty() {
                 propogate_to_parent = true;
+            } else {
+                return;
             }
         }
 

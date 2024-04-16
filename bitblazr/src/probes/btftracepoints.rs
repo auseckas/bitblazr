@@ -44,7 +44,7 @@ impl BtfTracepoints {
             bpf.take_map("BTP_BUFFER").unwrap().try_into()?;
 
         for cpu_id in online_cpus()? {
-            let mut tp_buf = tp_array.open(cpu_id, Some(256))?;
+            let mut tp_buf = tp_array.open(cpu_id, Some(512))?;
             let thread_snd = snd.clone();
             let th_ctx_tracker = ctx_tracker.clone();
 

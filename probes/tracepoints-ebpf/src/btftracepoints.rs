@@ -109,9 +109,13 @@ fn process_exec(ctx: BtfTracePointContext, event_type: BlazrEventType) -> Result
 
     init_be(&ctx, &mut be).map_err(|_| 1u32)?;
 
-    be.event_type = BlazrEventType::Exec;
+    be.event_type = event_type;
     be.log_class = BlazrRuleClass::File;
     be.ppid = Some(ppid);
+
+    if matches!(event_type, BlazrEventType::Exit) {
+        be.exit_code = unsafe { ((*task).exit_code & 0xff00) >> 8 } as u8;
+    }
 
     if matches!(event_type, BlazrEventType::Exec) {
         let lb: *const linux_binprm = unsafe { ctx.arg(2) };
@@ -178,6 +182,14 @@ fn process_sys_enter(ctx: BtfTracePointContext) -> Result<u32, u32> {
             200 => process_bind(ctx, pt_regs, be),
             201 => process_listen(ctx, pt_regs, be),
             203 => process_connect(ctx, pt_regs, be),
+            _ => Ok(0),
+        },
+        BlazrArch::Arm => match call_id {
+            322 => process_openat(ctx, pt_regs, be),
+            281 => process_socket(ctx, pt_regs, be),
+            282 => process_bind(ctx, pt_regs, be),
+            284 => process_listen(ctx, pt_regs, be),
+            283 => process_connect(ctx, pt_regs, be),
             _ => Ok(0),
         },
         _ => Ok(0),

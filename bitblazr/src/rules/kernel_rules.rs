@@ -373,7 +373,7 @@ pub(crate) fn load_rules_from_config(
 
     let rule_config = Config::builder()
         .add_source(File::new(
-            &format!("{}rules.json5", config_dir),
+            &format!("{}blocking_rules.json5", config_dir),
             FileFormat::Json5,
         ))
         .build()?;

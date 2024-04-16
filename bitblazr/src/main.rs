@@ -28,7 +28,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -128,16 +128,14 @@ async fn main() -> Result<(), anyhow::Error> {
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
+    warn!("Ctrl-C signal received");
     // Send shutdown message
-    labels_snd
-        .send(PsLabels {
-            ppid: u32::MAX,
-            pid: u32::MAX,
-            labels: [i64::MAX; 5],
-        })
-        .await
-        .unwrap();
-    info!("Exiting...");
+    let _ = labels_snd.try_send(PsLabels {
+        ppid: u32::MAX,
+        pid: u32::MAX,
+        labels: [i64::MAX; 5],
+    });
+    warn!("Exiting...");
 
     Ok(())
 }

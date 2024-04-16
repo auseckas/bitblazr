@@ -41,7 +41,7 @@ impl Tracepoints {
         let mut tp_array: AsyncPerfEventArray<_> = bpf.take_map("TP_BUFFER").unwrap().try_into()?;
 
         for cpu_id in online_cpus()? {
-            let mut tp_buf = tp_array.open(cpu_id, Some(256))?;
+            let mut tp_buf = tp_array.open(cpu_id, Some(512))?;
             let thread_snd = snd.clone();
             let th_ctx_tracker = ctx_tracker.clone();
             let th_labels_snd = self.labels_snd.clone();

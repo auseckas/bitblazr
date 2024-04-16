@@ -80,6 +80,21 @@ alert: [
                 ]
             }
         }
-    }
-
+    },
+    {        
+        class: 'file',
+        event: 'exit',
+        description: 'liblzma, sshd backdoor',
+        directives: {
+            path: { 
+                ends_with: 'sshd'
+            },
+            exit_code: {
+                neq: 0
+            },
+            run_time: {
+                lte: 2 // in seconds
+            }
+        }
+    }    
 ]}
