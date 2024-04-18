@@ -10,7 +10,7 @@
 log:  [
     {
         class: 'file',
-        event: 'exec',
+        event: 'exit',
         directives: {
             path: { 
                 starts_with: [ 

@@ -89,18 +89,18 @@ fn process_tps(ctx: TracePointContext) -> Result<u32, u32> {
 
     match arch {
         BlazrArch::X86_64 => match call_id {
-            2 => process_open(ctx, args, be),
+            2 | 85 => process_open(ctx, args, be),
             41 => process_socket(ctx, args, be),
             42 => process_connect(ctx, args, be),
             49 => process_bind(ctx, args, be),
             50 => process_listen(ctx, args, be),
             59 => process_exec(ctx, args, be),
             60 | 231 => process_exit(ctx, args, be),
-            257 => process_openat(ctx, args, be),
+            257 | 437 => process_openat(ctx, args, be),
             _ => Ok(0),
         },
         BlazrArch::Aarch64 => match call_id {
-            56 => process_openat(ctx, args, be),
+            56 | 437 => process_openat(ctx, args, be),
             93 | 94 => process_exit(ctx, args, be),
             198 => process_socket(ctx, args, be),
             200 => process_bind(ctx, args, be),
@@ -110,7 +110,8 @@ fn process_tps(ctx: TracePointContext) -> Result<u32, u32> {
             _ => Ok(0),
         },
         BlazrArch::Arm => match call_id {
-            322 => process_openat(ctx, args, be),
+            5 | 8 => process_open(ctx, args, be),
+            322 | 437 => process_openat(ctx, args, be),
             1 | 248 => process_exit(ctx, args, be),
             281 => process_socket(ctx, args, be),
             282 => process_bind(ctx, args, be),

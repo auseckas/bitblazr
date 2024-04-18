@@ -48,8 +48,8 @@
     process_labels: {
         container: [
             { contains: "containerd-shim-runc" },
-            { ends_with: "/runc"},
-            { ends_with: "/docker-entrypoint.sh" }
+            { ends_with: "runc"},
+            { ends_with: "docker-entrypoint.sh" }
         ],
         shell: [
             { eq: "bash" },

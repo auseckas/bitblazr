@@ -168,16 +168,16 @@ fn process_sys_enter(ctx: BtfTracePointContext) -> Result<u32, u32> {
 
     match arch {
         BlazrArch::X86_64 => match call_id {
-            2 => process_open(ctx, pt_regs, be),
+            2 | 85 => process_open(ctx, pt_regs, be),
             41 => process_socket(ctx, pt_regs, be),
             42 => process_connect(ctx, pt_regs, be),
             49 => process_bind(ctx, pt_regs, be),
             50 => process_listen(ctx, pt_regs, be),
-            257 => process_openat(ctx, pt_regs, be),
+            437 | 257 => process_openat(ctx, pt_regs, be),
             _ => Ok(0),
         },
         BlazrArch::Aarch64 => match call_id {
-            56 => process_openat(ctx, pt_regs, be),
+            56 | 437 => process_openat(ctx, pt_regs, be),
             198 => process_socket(ctx, pt_regs, be),
             200 => process_bind(ctx, pt_regs, be),
             201 => process_listen(ctx, pt_regs, be),
@@ -185,7 +185,8 @@ fn process_sys_enter(ctx: BtfTracePointContext) -> Result<u32, u32> {
             _ => Ok(0),
         },
         BlazrArch::Arm => match call_id {
-            322 => process_openat(ctx, pt_regs, be),
+            5 | 8 => process_open(ctx, pt_regs, be),
+            322 | 437 => process_openat(ctx, pt_regs, be),
             281 => process_socket(ctx, pt_regs, be),
             282 => process_bind(ctx, pt_regs, be),
             284 => process_listen(ctx, pt_regs, be),
