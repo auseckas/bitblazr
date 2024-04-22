@@ -4,7 +4,28 @@
 // Actions available here are: 'log', 'alert', or 'ignore'.
 
 {ignore: [
-
+    {
+        class: 'file',
+        event: 'open',
+        directives: {
+            path: { 
+                starts_with: [
+                    '/etc/ca-',
+                ]
+            }
+        }
+    },
+    {
+        class: 'file',
+        event: 'open',
+        directives: {
+            path: {
+                starts_with: '/home',
+                contains: '/.',
+                not: { contains: "history" }
+            }
+        }
+    }
 ],
 
 log:  [
@@ -24,6 +45,7 @@ log:  [
             }
         }
     },
+
     {
         class: 'file',
         event: 'open',

@@ -72,6 +72,8 @@ pub enum BlazrRuleTarget {
     IpAddr = 6,
     ExitCode = 7,
     RunTime = 8,
+    Uid = 9,
+    Gid = 10,
 }
 
 impl BlazrRuleVar for BlazrRuleTarget {
@@ -87,6 +89,8 @@ impl BlazrRuleVar for BlazrRuleTarget {
             "context" => BlazrRuleTarget::Context,
             "exit_code" => BlazrRuleTarget::ExitCode,
             "run_time" => BlazrRuleTarget::RunTime,
+            "uid" => BlazrRuleTarget::Uid,
+            "gid" => BlazrRuleTarget::Gid,
             _ => BlazrRuleTarget::Undefined,
         }
     }

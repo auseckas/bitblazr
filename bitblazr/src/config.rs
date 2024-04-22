@@ -63,3 +63,14 @@ pub(crate) fn load_config() -> Result<ShieldConfig, anyhow::Error> {
 
     Ok(conf)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::load_config;
+
+    #[test]
+    fn load_config_test() {
+        let r = load_config();
+        assert!(r.unwrap().features.tracepoints);
+    }
+}

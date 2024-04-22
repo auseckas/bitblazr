@@ -152,6 +152,8 @@ impl BlazrRuleEngine {
                 self.check_int_var(&op.command, &op.var, p.exit_code as i64)
             }
             BlazrRuleTarget::RunTime => self.check_int_var(&op.command, &op.var, p.run_time as i64),
+            BlazrRuleTarget::Uid => self.check_int_var(&op.command, &op.var, p.uid as i64),
+            BlazrRuleTarget::Gid => self.check_int_var(&op.command, &op.var, p.gid as i64),
             BlazrRuleTarget::Context => {
                 if let LogVar::String((patterns, _)) = &op.var {
                     let pats: Vec<i64> = patterns.iter().map(|s| get_hash(s) as i64).collect();
@@ -872,7 +874,7 @@ mod tests {
 
         let mut e = construct_event();
 
-        e.event_type = BlazrEventType::Connect;
+        e.event_type = BlazrEventType::Exit;
         e.context.push(6027998744940314019);
         e.proto_port.push(BSProtoPort {
             proto: 17,
@@ -884,9 +886,197 @@ mod tests {
         e.run_time = 1;
 
         let result = re
-            .check_rules(&BlazrRuleClass::Socket, &e.event_type, &e)
+            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
             .unwrap();
 
-        assert!(!result.alert);
+        assert!(result.alert);
+    }
+    #[test]
+    fn check_uid() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+        "ignore": [
+        ],
+        "log":  [
+        ],
+        "alert": [{
+            "class": "file",
+            "event": "exit",
+            "directives": {
+                "path": {
+                    "ends_with": "sshd"
+                },
+                "exit_code": {
+                    "neq": [ 0 ]
+                },
+                "run_time": {
+                    "lte": 1
+                },
+                "uid": {
+                    "lte": 999
+                }
+            }
+        }]});
+
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+
+        let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
+
+        let mut e = construct_event();
+
+        e.event_type = BlazrEventType::Exit;
+        e.context.push(6027998744940314019);
+        e.proto_port.push(BSProtoPort {
+            proto: 17,
+            port: 53,
+            ip: NoStdIpAddr::from([8, 8, 8, 8]),
+        });
+        e.path = "/usr/bin/sshd".to_string();
+        e.exit_code = 1;
+        e.run_time = 1;
+        e.uid = 637;
+
+        let result = re
+            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .unwrap();
+
+        assert!(result.alert);
+    }
+    #[test]
+    fn check_gid() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+        "ignore": [
+        ],
+        "log":  [
+        ],
+        "alert": [{
+            "class": "file",
+            "event": "exit",
+            "directives": {
+                "path": {
+                    "ends_with": "sshd"
+                },
+                "exit_code": {
+                    "neq": [ 0 ]
+                },
+                "run_time": {
+                    "lte": 1
+                },
+                "gid": {
+                    "gte": 1000
+                }
+            }
+        }]});
+
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+
+        let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
+
+        let mut e = construct_event();
+
+        e.event_type = BlazrEventType::Exit;
+        e.context.push(6027998744940314019);
+        e.proto_port.push(BSProtoPort {
+            proto: 17,
+            port: 53,
+            ip: NoStdIpAddr::from([8, 8, 8, 8]),
+        });
+        e.path = "/usr/bin/sshd".to_string();
+        e.exit_code = 1;
+        e.run_time = 1;
+        e.uid = 637;
+        e.gid = 1000;
+
+        let result = re
+            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .unwrap();
+
+        assert!(result.alert);
+    }
+    #[test]
+    fn check_ignore() {
+        let mut labels: HashMap<String, i64> = HashMap::new();
+        labels.insert("container".to_string(), 6027998744940314019);
+        labels.insert("webserver".to_string(), 7887656042122143105);
+
+        let rules = json!({
+        "ignore": [{
+            "class": "file",
+            "event": "exit",
+            "directives": {
+                "path": {
+                    "ends_with": "sshd"
+                }
+            }
+        }],
+        "log":  [
+        ],
+        "alert": [{
+            "class": "file",
+            "event": "exit",
+            "directives": {
+                "path": {
+                    "ends_with": "sshd"
+                },
+                "exit_code": {
+                    "neq": [ 0 ]
+                },
+                "run_time": {
+                    "lte": 1
+                },
+                "uid": {
+                    "lte": 999
+                }
+            }
+        }]});
+
+        let rules_obj = match rules {
+            Value::Object(rs) => rs
+                .into_iter()
+                .map(|(k, v)| (k, v))
+                .collect::<HashMap<String, Value>>(),
+            _ => panic!("Rules test definition is not an object"),
+        };
+
+        let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
+
+        let mut e = construct_event();
+
+        e.event_type = BlazrEventType::Exit;
+        e.context.push(6027998744940314019);
+        e.proto_port.push(BSProtoPort {
+            proto: 17,
+            port: 53,
+            ip: NoStdIpAddr::from([8, 8, 8, 8]),
+        });
+        e.path = "/usr/bin/sshd".to_string();
+        e.exit_code = 1;
+        e.run_time = 1;
+        e.uid = 637;
+
+        let result = re
+            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .unwrap();
+
+        assert!(!result.alert && !result.log && result.ignore);
     }
 }
