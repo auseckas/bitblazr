@@ -6,7 +6,7 @@
 [![Discord](https://img.shields.io/discord/1219021549710086314?label=Discord&logo=discord)](https://discord.gg/hCbD9RC4)
 [![Documentation](https://img.shields.io/badge/docs-released-blue.svg?label=Documentation)](https://www.ziosec.com/bitblazr)
 
-TL;DR: you can go straight to [Getting Started](https://www.ziosec.com/getting-started) and quickly launch a BitBlazr Docker container.
+TL;DR: you can go straight to [Getting Started](https://ziosec.com/getting_started/) and quickly launch a BitBlazr Docker container.
 
 **BitBlazr** harnesses the power of eBPF to fortify IoT and container environments against potential threats. Blending features from Mandatory Access Controls (MAC) and eBPF-based monitoring programs, the sensor offers a kernel-level rule system for policy enforcement as well as configurable logging targets, empowering users with robust filtering logic and clear delineation between events, alerts, and informational messages.
 
