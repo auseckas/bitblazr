@@ -39,8 +39,14 @@ pub(crate) struct BlazrLimits {
 }
 
 #[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]
+pub(crate) struct BlazrTracing {
+    pub open_prefixes: Vec<String>,
+}
+
+#[derive(Debug, Default, serde_derive::Deserialize, PartialEq, Eq)]
 pub(crate) struct ShieldConfig {
     pub features: ShieldFeatures,
+    pub tracing: BlazrTracing,
     pub limits: BlazrLimits,
     pub process_labels: HashMap<String, Vec<HashMap<String, String>>>,
     pub logs: ShieldLogsConfig,

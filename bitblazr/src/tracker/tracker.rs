@@ -246,7 +246,7 @@ impl BSProcessTracker {
                                 e.run_time = Utc::now().timestamp() - e.created.timestamp();
                                 e.exit_code = event.exit_code;
                                 debug!("Runtime: {}, exit_code: {}, type: {:?}, path: {}", e.run_time, e.exit_code, e.event_type, e.path);
-                                if let Ok(log_r) = log_rules.check_rules(&event.log_class, &event.event_type, &e) {
+                                if let Ok(log_r) = log_rules.check_rules(&event.log_class, &event.event_type, &e, &event) {
                                     if !log_r.ignore {
                                         if matches!(e.action, BlazrAction::Block) || log_r.alert {
                                             e.emit_log_entry(thread_ctx_tracker.clone(), "alert", th_sensor_name.as_str(), &event, log_r.results, true);
@@ -374,7 +374,7 @@ impl BSProcessTracker {
                                         // We could have multiple events for a single command, so emit log only if we have rule matches
                                         // Otherwise we delay logging, and clean it up every few seconds
                                         // Of course alerts should be sent up right away even if we don't have all the data yet
-                                        if let Ok(log_r) = log_rules.check_rules(&event.log_class, &event.event_type, &e) {
+                                        if let Ok(log_r) = log_rules.check_rules(&event.log_class, &event.event_type, &e, &event) {
                                             if !log_r.ignore {
                                                 if matches!(e.action, BlazrAction::Block)
                                                     || log_r.alert
@@ -480,7 +480,7 @@ impl BSProcessTracker {
                                         // We could have multiple events for a single command, so emit log only if we have rule matches
                                         // Otherwise we delay logging, and clean it up every few seconds
                                         // Of course alerts should be sent up right away even if we don't have all the data yet
-                                        if let Ok(log_r) = log_rules.check_rules(&event.log_class, &event.event_type, &e) {
+                                        if let Ok(log_r) = log_rules.check_rules(&event.log_class, &event.event_type, &e, &event) {
                                             if !log_r.ignore {
                                                 if matches!(e.action, BlazrAction::Block)
                                                     || log_r.alert

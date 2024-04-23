@@ -9,7 +9,23 @@
     limits: {
         max_events: 500, // maximum events per second, per CPU. Setting this to 0 disables limits
         backoff: 60 // backoff time in seconds, moniotring events will be suspended for this amount of time
-    },   
+    },
+    tracing: {
+        open_prefixes: [
+            "/etc",
+            "/usr/local/",
+            "/opt",
+            "/proc/config.gz",
+            "/proc/kcore",
+            "/sys/kernel",
+            "/sys/firmware",
+            "/var/log",
+            "/var/www",
+            "/home",
+            "/root",
+            "/tmp"
+        ]
+    },    
     // Logging setup
     logs: {
         default: {

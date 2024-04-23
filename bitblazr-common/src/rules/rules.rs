@@ -229,10 +229,16 @@ pub struct SearchKey {
     pub buf: [u8; 52],
 }
 
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct PrefixKey {
+    pub buf: [u8; 27],
+}
+
 #[cfg(feature = "user")]
 mod maps {
     use crate::models::BlazrArch;
-    use crate::rules::{BlazrOp, BlazrRule, BlazrRulesKey, SearchKey, TrieKey};
+    use crate::rules::{BlazrOp, BlazrRule, BlazrRulesKey, PrefixKey, SearchKey, TrieKey};
     use aya::Pod;
     unsafe impl Pod for BlazrRule {}
     unsafe impl Pod for BlazrRulesKey {}
@@ -240,4 +246,5 @@ mod maps {
     unsafe impl Pod for BlazrArch {}
     unsafe impl Pod for TrieKey {}
     unsafe impl Pod for SearchKey {}
+    unsafe impl Pod for PrefixKey {}
 }

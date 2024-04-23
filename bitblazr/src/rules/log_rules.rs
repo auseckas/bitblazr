@@ -3,7 +3,8 @@ use crate::tracker::tracker::BSProcess;
 use crate::utils::get_hash;
 use crate::BSError;
 use aho_corasick::AhoCorasick;
-use bitblazr_common::{rules::*, BlazrEventType};
+use bitblazr_common::utils::str_from_buf_nul;
+use bitblazr_common::{rules::*, BlazrEvent, BlazrEventType};
 use config::{Config, File, FileFormat};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -134,9 +135,9 @@ impl BlazrRuleEngine {
         r
     }
 
-    fn check_op(&self, op: &LogOp, p: &BSProcess) -> Result<bool, anyhow::Error> {
+    fn check_op(&self, op: &LogOp, p: &BSProcess, path: &str) -> Result<bool, anyhow::Error> {
         let mut result = match op.target {
-            BlazrRuleTarget::Path => self.check_str_var(&op.command, &op.var, p.path.as_bytes())?,
+            BlazrRuleTarget::Path => self.check_str_var(&op.command, &op.var, path.as_bytes())?,
             BlazrRuleTarget::Port => p
                 .proto_port
                 .iter()
@@ -187,13 +188,14 @@ impl BlazrRuleEngine {
         key: i64,
         map: &HashMap<i64, Vec<LogRule>>,
         p: &BSProcess,
+        path: &str,
     ) -> Result<Vec<BlazrRuleResult>, anyhow::Error> {
         let mut results = Vec::new();
         if let Some(rules) = map.get(&key) {
             for (i, rule) in rules.iter().enumerate() {
                 let mut matched = true;
                 for op in rule.ops.iter() {
-                    if !self.check_op(op, p)? {
+                    if !self.check_op(op, p, path)? {
                         matched = false;
                         break;
                     }
@@ -217,24 +219,30 @@ impl BlazrRuleEngine {
         log_class: &BlazrRuleClass,
         event_type: &BlazrEventType,
         p: &BSProcess,
+        e: &BlazrEvent,
     ) -> Result<BlazrLogResult, anyhow::Error> {
         let mut log_result = BlazrLogResult::default();
 
         debug!("Log class: {:?}, event type: {:?}", log_class, event_type);
         let key = self.get_op_key(&log_class, &event_type);
-        log_result.results = self.check_map(key, &self.ignore, p)?;
+        let path = match event_type {
+            BlazrEventType::Open => str_from_buf_nul(&e.path).unwrap_or(""),
+            _ => p.path.as_str(),
+        };
+
+        log_result.results = self.check_map(key, &self.ignore, p, path)?;
         if !log_result.results.is_empty() {
             log_result.ignore = true;
             return Ok(log_result);
         }
 
-        let mut results = self.check_map(key, &self.log, p)?;
+        let mut results = self.check_map(key, &self.log, p, path)?;
         if !results.is_empty() {
             log_result.log = true;
             log_result.results.append(&mut results);
         }
 
-        let mut results = self.check_map(key, &self.alert, p)?;
+        let mut results = self.check_map(key, &self.alert, p, path)?;
         if !results.is_empty() {
             log_result.alert = true;
             log_result.results.append(&mut results);
@@ -466,13 +474,14 @@ mod tests {
     use super::BlazrRuleEngine;
     use bitblazr_common::{
         rules::{BlazrRuleClass, BlazrRuleTarget},
-        BlazrAction, BlazrEventType,
+        BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType,
     };
     use chrono::Utc;
     use no_std_net::IpAddr as NoStdIpAddr;
+    use no_std_net::Ipv4Addr;
     use serde_json::Value;
 
-    fn construct_event() -> BSProcess {
+    fn construct_process() -> BSProcess {
         BSProcess {
             event_type: BlazrEventType::Open,
             created: Utc::now(),
@@ -492,6 +501,31 @@ mod tests {
             exit_code: 0,
             run_time: 0,
             logged: false,
+        }
+    }
+
+    fn construct_event() -> BlazrEvent {
+        BlazrEvent {
+            class: BlazrEventClass::Tracepoint,
+            event_type: BlazrEventType::Open,
+            log_class: BlazrRuleClass::File,
+            ppid: None,
+            tgid: 1212,
+            pid: 1212,
+            uid: 1000,
+            gid: 1000,
+            action: BlazrAction::Allow,
+            protocol: 0,
+            ip_addr: NoStdIpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            port: 0,
+            rule_hits: [0; 5],
+            labels: [0; 5],
+            p_path: [0; 255],
+            path: [0; 255],
+            path_len: 0,
+            argv_count: 0,
+            argv: [[0; 200]; bitblazr_common::ARGV_COUNT],
+            exit_code: 0,
         }
     }
 
@@ -637,13 +671,16 @@ mod tests {
 
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
+        let mut p = construct_process();
+        p.path = "/etc/passwd".to_string();
+        p.event_type = BlazrEventType::Open;
+        p.context.push(6027998744940314019);
+
         let mut e = construct_event();
-        e.path = "/etc/passwd".to_string();
-        e.event_type = BlazrEventType::Open;
-        e.context.push(6027998744940314019);
+        e.path[0..p.path.len()].copy_from_slice(&p.path.as_bytes()[0..p.path.len()]);
 
         let result = re
-            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .check_rules(&BlazrRuleClass::File, &p.event_type, &p, &e)
             .unwrap();
         assert!(result.log);
     }
@@ -736,13 +773,16 @@ mod tests {
 
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
+        let mut p = construct_process();
+        p.path = "/etc/shadow".to_string();
+        p.event_type = BlazrEventType::Open;
+        p.context.push(6027998744940314019);
+
         let mut e = construct_event();
-        e.path = "/etc/shadow".to_string();
-        e.event_type = BlazrEventType::Open;
-        e.context.push(6027998744940314019);
+        e.path[0..p.path.len()].copy_from_slice(&p.path.as_bytes()[0..p.path.len()]);
 
         let result = re
-            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .check_rules(&BlazrRuleClass::File, &p.event_type, &p, &e)
             .unwrap();
         assert!(result.alert);
     }
@@ -775,13 +815,16 @@ mod tests {
 
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
+        let mut p = construct_process();
+        p.path = "/usr/bin/ls".to_string();
+        p.event_type = BlazrEventType::Exec;
+        p.context.push(6027998744940314019);
+
         let mut e = construct_event();
-        e.path = "/usr/bin/ls".to_string();
-        e.event_type = BlazrEventType::Exec;
-        e.context.push(6027998744940314019);
+        e.path[0..p.path.len()].copy_from_slice(&p.path.as_bytes()[0..p.path.len()]);
 
         let result = re
-            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .check_rules(&BlazrRuleClass::File, &p.event_type, &p, &e)
             .unwrap();
 
         assert!(result.alert);
@@ -818,18 +861,18 @@ mod tests {
 
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
-        let mut e = construct_event();
-
-        e.event_type = BlazrEventType::Connect;
-        e.context.push(6027998744940314019);
-        e.proto_port.push(BSProtoPort {
+        let mut p = construct_process();
+        p.event_type = BlazrEventType::Connect;
+        p.context.push(6027998744940314019);
+        p.proto_port.push(BSProtoPort {
             proto: 17,
             port: 53,
             ip: NoStdIpAddr::from([8, 8, 8, 8]),
         });
 
+        let e = construct_event();
         let result = re
-            .check_rules(&BlazrRuleClass::Socket, &e.event_type, &e)
+            .check_rules(&BlazrRuleClass::Socket, &p.event_type, &p, &e)
             .unwrap();
 
         assert!(!result.alert);
@@ -872,21 +915,22 @@ mod tests {
 
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
-        let mut e = construct_event();
-
-        e.event_type = BlazrEventType::Exit;
-        e.context.push(6027998744940314019);
-        e.proto_port.push(BSProtoPort {
+        let mut p = construct_process();
+        p.event_type = BlazrEventType::Exit;
+        p.context.push(6027998744940314019);
+        p.proto_port.push(BSProtoPort {
             proto: 17,
             port: 53,
             ip: NoStdIpAddr::from([8, 8, 8, 8]),
         });
-        e.path = "/usr/bin/sshd".to_string();
-        e.exit_code = 1;
-        e.run_time = 1;
+        p.path = "/usr/bin/sshd".to_string();
+        p.exit_code = 1;
+        p.run_time = 1;
+
+        let e = construct_event();
 
         let result = re
-            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .check_rules(&BlazrRuleClass::File, &p.event_type, &p, &e)
             .unwrap();
 
         assert!(result.alert);
@@ -931,22 +975,22 @@ mod tests {
 
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
-        let mut e = construct_event();
-
-        e.event_type = BlazrEventType::Exit;
-        e.context.push(6027998744940314019);
-        e.proto_port.push(BSProtoPort {
+        let mut p = construct_process();
+        p.event_type = BlazrEventType::Exit;
+        p.context.push(6027998744940314019);
+        p.proto_port.push(BSProtoPort {
             proto: 17,
             port: 53,
             ip: NoStdIpAddr::from([8, 8, 8, 8]),
         });
-        e.path = "/usr/bin/sshd".to_string();
-        e.exit_code = 1;
-        e.run_time = 1;
-        e.uid = 637;
+        p.path = "/usr/bin/sshd".to_string();
+        p.exit_code = 1;
+        p.run_time = 1;
+        p.uid = 637;
 
+        let e = construct_event();
         let result = re
-            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .check_rules(&BlazrRuleClass::File, &p.event_type, &p, &e)
             .unwrap();
 
         assert!(result.alert);
@@ -991,23 +1035,23 @@ mod tests {
 
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
-        let mut e = construct_event();
-
-        e.event_type = BlazrEventType::Exit;
-        e.context.push(6027998744940314019);
-        e.proto_port.push(BSProtoPort {
+        let mut p = construct_process();
+        p.event_type = BlazrEventType::Exit;
+        p.context.push(6027998744940314019);
+        p.proto_port.push(BSProtoPort {
             proto: 17,
             port: 53,
             ip: NoStdIpAddr::from([8, 8, 8, 8]),
         });
-        e.path = "/usr/bin/sshd".to_string();
-        e.exit_code = 1;
-        e.run_time = 1;
-        e.uid = 637;
-        e.gid = 1000;
+        p.path = "/usr/bin/sshd".to_string();
+        p.exit_code = 1;
+        p.run_time = 1;
+        p.uid = 637;
+        p.gid = 1000;
 
+        let e = construct_event();
         let result = re
-            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .check_rules(&BlazrRuleClass::File, &p.event_type, &p, &e)
             .unwrap();
 
         assert!(result.alert);
@@ -1059,22 +1103,22 @@ mod tests {
 
         let re = BlazrRuleEngine::load_rules(&labels, rules_obj).unwrap();
 
-        let mut e = construct_event();
-
-        e.event_type = BlazrEventType::Exit;
-        e.context.push(6027998744940314019);
-        e.proto_port.push(BSProtoPort {
+        let mut p = construct_process();
+        p.event_type = BlazrEventType::Exit;
+        p.context.push(6027998744940314019);
+        p.proto_port.push(BSProtoPort {
             proto: 17,
             port: 53,
             ip: NoStdIpAddr::from([8, 8, 8, 8]),
         });
-        e.path = "/usr/bin/sshd".to_string();
-        e.exit_code = 1;
-        e.run_time = 1;
-        e.uid = 637;
+        p.path = "/usr/bin/sshd".to_string();
+        p.exit_code = 1;
+        p.run_time = 1;
+        p.uid = 637;
 
+        let e = construct_event();
         let result = re
-            .check_rules(&BlazrRuleClass::File, &e.event_type, &e)
+            .check_rules(&BlazrRuleClass::File, &p.event_type, &p, &e)
             .unwrap();
 
         assert!(!result.alert && !result.log && result.ignore);

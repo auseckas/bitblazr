@@ -1,8 +1,8 @@
 use aya_ebpf::EbpfContext;
 
 use aya_ebpf::helpers::{
-    bpf_get_current_task, bpf_probe_read, bpf_probe_read_kernel_str_bytes,
-    bpf_probe_read_user_str_bytes,
+    bpf_get_current_task, bpf_probe_read, bpf_probe_read_kernel_buf,
+    bpf_probe_read_kernel_str_bytes, bpf_probe_read_user_str_bytes,
 };
 use aya_ebpf::{macros::map, macros::tracepoint, programs::TracePointContext};
 use aya_log_ebpf::debug;
@@ -12,15 +12,26 @@ use crate::common::{
 };
 
 use crate::vmlinux::{sockaddr, task_struct};
-use aya_ebpf::maps::PerfEventByteArray;
+use aya_ebpf::maps::lpm_trie::Key;
+use aya_ebpf::maps::{Array, LpmTrie, PerfEventByteArray};
 use bitblazr_common::models::BlazrArch;
 use bitblazr_common::rules::BlazrRuleClass;
-use bitblazr_common::utils::check_path;
 use bitblazr_common::{BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType};
 use no_std_net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[map]
 pub static mut TP_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
+
+#[repr(C)]
+pub struct PrefixKey {
+    pub buf: [u8; 27],
+}
+
+#[map]
+pub(crate) static mut TP_OPEN_PREFIX: LpmTrie<PrefixKey, u32> = LpmTrie::with_max_entries(100, 0);
+
+#[map]
+pub(crate) static mut TP_OPEN_PREFIX_LEN: Array<u32> = Array::with_max_entries(100, 0);
 
 #[tracepoint]
 pub fn tracepoints(ctx: TracePointContext) -> u32 {
@@ -160,11 +171,31 @@ fn process_open(ctx: TracePointContext, args: [u64; 6], be: &mut BlazrEvent) -> 
     let f_name = args[0] as *const u8;
     unsafe { bpf_probe_read_user_str_bytes(f_name, &mut be.path).map_err(|_| 1u32)? };
 
-    if check_path(&be.path) {
+    let mut p_key = Key::new(25, PrefixKey { buf: [0; 27] });
+
+    unsafe {
+        bpf_probe_read_kernel_buf(be.path.as_ptr(), &mut p_key.data.buf).map_err(|_| 0u32)?;
+    }
+
+    let mut matched = false;
+    for i in 0..100u32 {
+        let len = unsafe { *TP_OPEN_PREFIX_LEN.get(i).unwrap_or(&27) };
+        if len > 25 {
+            break;
+        }
+        p_key.prefix_len = len * 8;
+        if unsafe { TP_OPEN_PREFIX.get(&p_key).is_some() } {
+            matched = true;
+            break;
+        }
+    }
+
+    if matched {
         unsafe {
             TP_BUFFER.output(&ctx, be.to_bytes(), 0);
         }
     }
+
     Ok(0)
 }
 
@@ -175,11 +206,31 @@ fn process_openat(ctx: TracePointContext, args: [u64; 6], be: &mut BlazrEvent) -
     let f_name = args[1] as *const u8;
     unsafe { bpf_probe_read_user_str_bytes(f_name, &mut be.path).map_err(|_| 1u32)? };
 
-    if check_path(&be.path) {
+    let mut p_key = Key::new(25, PrefixKey { buf: [0; 27] });
+
+    unsafe {
+        bpf_probe_read_kernel_buf(be.path.as_ptr(), &mut p_key.data.buf).map_err(|_| 0u32)?;
+    }
+
+    let mut matched = false;
+    for i in 0..100u32 {
+        let len = unsafe { *TP_OPEN_PREFIX_LEN.get(i).unwrap_or(&27) };
+        if len > 25 {
+            break;
+        }
+        p_key.prefix_len = len * 8;
+        if unsafe { TP_OPEN_PREFIX.get(&p_key).is_some() } {
+            matched = true;
+            break;
+        }
+    }
+
+    if matched {
         unsafe {
             TP_BUFFER.output(&ctx, be.to_bytes(), 0);
         }
     }
+
     Ok(0)
 }
 

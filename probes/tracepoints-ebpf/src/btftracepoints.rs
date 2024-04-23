@@ -8,7 +8,8 @@ use aya_ebpf::bindings::pt_regs;
 use aya_ebpf::bindings::user_pt_regs as pt_regs;
 
 use aya_ebpf::helpers::{
-    bpf_probe_read, bpf_probe_read_kernel_str_bytes, bpf_probe_read_user_str_bytes,
+    bpf_probe_read, bpf_probe_read_kernel_buf, bpf_probe_read_kernel_str_bytes,
+    bpf_probe_read_user_str_bytes,
 };
 use aya_ebpf::{macros::btf_tracepoint, macros::map, programs::BtfTracePointContext};
 use aya_log_ebpf::debug;
@@ -18,14 +19,25 @@ use bitblazr_common::{BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType, 
 
 use crate::common::{sockaddr_in, sockaddr_in6, AF_INET, AF_INET6, LOCAL_BUFFER, TP_ARCH};
 use aya_ebpf::helpers::bpf_get_current_task;
-use aya_ebpf::maps::PerfEventByteArray;
+use aya_ebpf::maps::lpm_trie::Key;
+use aya_ebpf::maps::{Array, LpmTrie, PerfEventByteArray};
 use aya_ebpf::PtRegs;
 use bitblazr_common::models::BlazrArch;
-use bitblazr_common::utils::check_path;
 use no_std_net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[map]
 pub static mut BTP_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
+
+#[repr(C)]
+pub struct PrefixKey {
+    pub buf: [u8; 27],
+}
+
+#[map]
+pub(crate) static mut OPEN_PREFIX: LpmTrie<PrefixKey, u32> = LpmTrie::with_max_entries(100, 0);
+
+#[map]
+pub(crate) static mut OPEN_PREFIX_LEN: Array<u32> = Array::with_max_entries(100, 0);
 
 #[btf_tracepoint(function = "sched_process_exec")]
 pub fn sched_process_exec(ctx: BtfTracePointContext) -> u32 {
@@ -208,7 +220,26 @@ fn process_open(
     be.event_type = BlazrEventType::Open;
     be.log_class = BlazrRuleClass::File;
 
-    if check_path(&be.path) {
+    let mut p_key = Key::new(25, PrefixKey { buf: [0; 27] });
+
+    unsafe {
+        bpf_probe_read_kernel_buf(be.path.as_ptr(), &mut p_key.data.buf).map_err(|_| 0u32)?;
+    }
+
+    let mut matched = false;
+    for i in 0..100u32 {
+        let len = unsafe { *OPEN_PREFIX_LEN.get(i).unwrap_or(&27) };
+        if len > 25 {
+            break;
+        }
+        p_key.prefix_len = len * 8;
+        if unsafe { OPEN_PREFIX.get(&p_key).is_some() } {
+            matched = true;
+            break;
+        }
+    }
+
+    if matched {
         unsafe {
             BTP_BUFFER.output(&ctx, be.to_bytes(), 0);
         }
@@ -227,11 +258,31 @@ fn process_openat(
     be.event_type = BlazrEventType::Open;
     be.log_class = BlazrRuleClass::File;
 
-    if check_path(&be.path) {
+    let mut p_key = Key::new(25, PrefixKey { buf: [0; 27] });
+
+    unsafe {
+        bpf_probe_read_kernel_buf(be.path.as_ptr(), &mut p_key.data.buf).map_err(|_| 0u32)?;
+    }
+
+    let mut matched = false;
+    for i in 0..100u32 {
+        let len = unsafe { *OPEN_PREFIX_LEN.get(i).unwrap_or(&27) };
+        if len > 25 {
+            break;
+        }
+        p_key.prefix_len = len * 8;
+        if unsafe { OPEN_PREFIX.get(&p_key).is_some() } {
+            matched = true;
+            break;
+        }
+    }
+
+    if matched {
         unsafe {
             BTP_BUFFER.output(&ctx, be.to_bytes(), 0);
         }
     }
+
     Ok(0)
 }
 
@@ -321,11 +372,6 @@ fn process_connect(
         let int_ip = sockaddr_in.sin_addr.to_be();
         let addr = Ipv4Addr::from(int_ip);
         be.ip_addr = IpAddr::V4(addr);
-
-        // info!(
-        //     &ctx,
-        //     "Connection attempted to IP: {}, port: {}", int_ip, be.port
-        // );
     } else if sa_family == AF_INET6 {
         let sockaddr_in: sockaddr_in6 =
             unsafe { bpf_probe_read(pt_regs.arg(1).ok_or(1u32)?).map_err(|_| 1u32)? };
