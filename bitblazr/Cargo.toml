@@ -1,6 +1,6 @@
 [package]
 name = "bitblazr"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 publish = false
 
@@ -25,7 +25,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["std", "env-filter", "json"] }
 tracing-appender = "0.2"
 no-std-net = "0.6"
-paho-mqtt = { version = "0.12", features=["vendored-ssl"] }
+paho-mqtt = { version = "0.12", features=["bundled", "ssl"] }
 clap = { version = "4.5", features=["derive"] }
 names = { version = "0.14", default-features = false }
 cloudevents-sdk = "0.7"

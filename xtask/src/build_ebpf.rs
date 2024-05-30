@@ -70,11 +70,10 @@ fn build_probe(path: &str, opts: &Options) -> Result<(), anyhow::Error> {
             ),
         )
         .args(&args)
-        .status();
-    // .expect("failed to build bpf program");
-    println!("Status: {:?}", status);
+        .status()
+        .expect("failed to build bpf program");
 
-    // assert!(status.success());
+    assert!(status.success());
     Ok(())
 }
 
