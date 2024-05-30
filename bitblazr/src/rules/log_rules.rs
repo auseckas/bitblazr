@@ -452,8 +452,8 @@ pub(crate) fn load_rules_from_config(
 
     let rule_config = Config::builder()
         .add_source(File::new(
-            &format!("{}alerting_rules.json5", config_dir),
-            FileFormat::Json5,
+            &format!("{}alerting_rules.yaml", config_dir),
+            FileFormat::Yaml,
         ))
         .build()?;
 

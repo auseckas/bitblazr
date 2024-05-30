@@ -1,14 +1,14 @@
 use aya_ebpf::macros::map;
 use aya_ebpf::maps::{Array, PerCpuArray};
 use aya_ebpf::{helpers::bpf_probe_read, helpers::bpf_probe_read_user_str_bytes};
-use bitblazr_common::models::BlazrArch;
+use bitblazr_common::models::BlazrSysInfo;
 use bitblazr_common::{BlazrEvent, ARGV_COUNT};
 
 #[map]
 pub(crate) static mut LOCAL_BUFFER: PerCpuArray<BlazrEvent> = PerCpuArray::with_max_entries(1, 0);
 
 #[map]
-pub(crate) static mut TP_ARCH: Array<BlazrArch> = Array::with_max_entries(1, 0);
+pub(crate) static mut TP_SYSINFO: Array<BlazrSysInfo> = Array::with_max_entries(1, 0);
 
 #[inline]
 pub(crate) fn read_list_u8(src: *const *const u8, dst: &mut [[u8; 200]]) -> Result<u8, u32> {

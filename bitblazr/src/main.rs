@@ -19,14 +19,16 @@ use tracker::labels::ContextTracker;
 
 use crate::probes::PsLabels;
 use aya::maps::{Array, MapData};
-use bitblazr_common::models::BlazrArch;
+use bitblazr_common::models::{BlazrArch, BlazrKernelVersion, BlazrSysInfo};
 use bitblazr_common::rules::BlazrRuleVar;
 use clap::Parser;
 use errors::BSError;
 use logs::BlazrLogs;
+use semver::{Prerelease, Version, VersionReq};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use sysinfo::System;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
@@ -67,15 +69,32 @@ async fn main() -> Result<(), anyhow::Error> {
     #[cfg(not(debug_assertions))]
     let mut bpf = Bpf::load_file("probes/target/bpfel-unknown-none/release/bitblazr-tracepoints")?;
 
-    let mut tp_arch: Array<&mut MapData, BlazrArch> =
-        Array::try_from(bpf.map_mut("TP_ARCH").unwrap()).unwrap();
+    let mut tp_arch: Array<&mut MapData, BlazrSysInfo> =
+        Array::try_from(bpf.map_mut("TP_SYSINFO").unwrap()).unwrap();
 
     let arch = BlazrArch::from_str(std::env::consts::ARCH.to_string().as_mut_str());
     if arch.is_undefined() {
         error!(target: "error", "Usupported architecture: {}", std::env::consts::ARCH);
         return Ok(());
     }
-    tp_arch.set(0, arch, 0)?;
+
+    let mut sys_info = BlazrSysInfo {
+        arch: arch,
+        kernel_ver: BlazrKernelVersion::Default,
+    };
+
+    let mut kernel_ver = Version::parse(&System::kernel_version().unwrap_or(String::new()))?;
+    kernel_ver.pre = Prerelease::new("")?;
+    let six_nine_plus = VersionReq::parse(">=6.9.0")?;
+
+    sys_info.kernel_ver = {
+        if six_nine_plus.matches(&kernel_ver) {
+            BlazrKernelVersion::SixNinePlus
+        } else {
+            BlazrKernelVersion::Default
+        }
+    };
+    tp_arch.set(0, sys_info, 0)?;
 
     let (labels_snd, labels_recv) = mpsc::channel::<PsLabels>(100);
 
@@ -113,6 +132,11 @@ async fn main() -> Result<(), anyhow::Error> {
         let mut lsm_bpf = Bpf::load_file("probes/target/bpfel-unknown-none/debug/bitblazr-lsm")?;
         #[cfg(not(debug_assertions))]
         let mut lsm_bpf = Bpf::load_file("probes/target/bpfel-unknown-none/release/bitblazr-lsm")?;
+
+        let mut tp_arch: Array<&mut MapData, BlazrSysInfo> =
+            Array::try_from(lsm_bpf.map_mut("TP_SYSINFO").unwrap()).unwrap();
+
+        tp_arch.set(0, sys_info, 0)?;
 
         bpf_loader.attach(
             &mut lsm_bpf,

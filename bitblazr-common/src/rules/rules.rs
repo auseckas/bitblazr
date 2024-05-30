@@ -237,13 +237,13 @@ pub struct PrefixKey {
 
 #[cfg(feature = "user")]
 mod maps {
-    use crate::models::BlazrArch;
+    use crate::models::BlazrSysInfo;
     use crate::rules::{BlazrOp, BlazrRule, BlazrRulesKey, PrefixKey, SearchKey, TrieKey};
     use aya::Pod;
     unsafe impl Pod for BlazrRule {}
     unsafe impl Pod for BlazrRulesKey {}
     unsafe impl Pod for BlazrOp {}
-    unsafe impl Pod for BlazrArch {}
+    unsafe impl Pod for BlazrSysInfo {}
     unsafe impl Pod for TrieKey {}
     unsafe impl Pod for SearchKey {}
     unsafe impl Pod for PrefixKey {}

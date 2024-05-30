@@ -1,0 +1,73 @@
+features:
+  # LSM, blocking functionality, with this off the kernel rules won't work
+  lsm: false
+  # Tracepoints, used for monitoring
+  tracepoints: true
+
+limits:
+  # maximum events per second, per CPU. Setting this to 0 disables limits
+  backoff: 60
+  # backoff time in seconds, moniotring events will be suspended for this amount of time
+  max_events: 500
+
+# Logging setup
+logs:
+  alerts:
+    directory: /tmp
+    enable: true
+    format: json
+    max_files: 5
+    prefix: bitblazr_alerts.log
+    rotation: hourly
+    target: file
+  default:
+    enable: true
+    target: stdout
+  errors:
+    enable: true
+    target: stderr
+  events:
+    enable: true
+    format: compact
+    target: stdout
+  # alerts:
+  #   enable: true
+  #   format: compact
+  #   target: mqtt
+  #   format: cloudevents
+  #   mqtt_uri: "mqtts://[unique uri token].s2.eu.hivemq.cloud:8883/mqtt"
+  #   mqtt_user: "***"
+  #   mqtt_pwd: "***"
+  #   mqtt_topic: test
+
+# Definitions used in context detection, these labels can be used in rules
+process_labels:
+  container:
+  - contains: containerd-shim-runc
+  - ends_with: runc
+  - ends_with: docker-entrypoint.sh
+  database:
+  - contains: mysqld
+  shell:
+  - eq: bash
+  - ends_with: /bash
+  - ends_with: /sh
+  - ends_with: /csh
+  - ends_with: /ksh
+  webserver:
+  - starts_with: nginx
+tracing:
+  open_prefixes:
+  - /etc
+  - /usr/local/
+  - /opt
+  - /proc/config.gz
+  - /proc/kcore
+  - /sys/kernel
+  - /sys/firmware
+  - /var/log
+  - /var/www
+  - /home
+  - /root
+  - /tmp
+

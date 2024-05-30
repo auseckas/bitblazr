@@ -12,9 +12,12 @@ use aya_ebpf::maps::{
 use aya_ebpf::{macros::lsm, macros::map, programs::LsmContext};
 use aya_log_ebpf::debug;
 
-use crate::vmlinux::{file, linux_binprm, path as lnx_path, socket, task_struct};
+use crate::vmlinux::vmlinux::{file, path as lnx_path, pid_t, socket};
 
+use crate::{get_offset, probe_read};
 use aya_ebpf::bindings::path;
+use bitblazr_common::models::{BlazrKernelVersion, BlazrSysInfo};
+use core::ffi::c_void;
 
 // use aya_log_ebpf::info;
 use bitblazr_common::{
@@ -24,6 +27,9 @@ use bitblazr_common::{
 };
 use core::mem::size_of;
 use no_std_net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+#[map]
+pub(crate) static mut TP_SYSINFO: Array<BlazrSysInfo> = Array::with_max_entries(1, 0);
 
 #[map]
 pub static mut LSM_BUFFER: PerfEventByteArray = PerfEventByteArray::new(0);
@@ -82,10 +88,9 @@ struct RuleResult {
 
 fn process_lsm(ctx: &LsmContext, be: &mut BlazrEvent) -> Result<(), i32> {
     debug!(ctx, "lsm tracepoint called");
-
-    let task: *const task_struct = unsafe { bpf_get_current_task() as *const _ };
-    let parent: *const task_struct = unsafe { bpf_probe_read(&(*task).parent).map_err(|_| 0i32)? };
-    let ppid = unsafe { bpf_probe_read(&(*parent).pid).map_err(|_| 0i32)? };
+    let task: *const c_void = unsafe { bpf_get_current_task() as *const _ };
+    let parent = probe_read!(task, task_struct, parent, *const c_void, 0i32);
+    let ppid = probe_read!(parent, task_struct, pid, pid_t, 0i32);
 
     let mut p_comm = ctx.command().map_err(|_| 0i32)?;
     unsafe {
@@ -394,7 +399,7 @@ fn process_ops(
                         break;
                     }
                 }
-                debug!(ctx, "Matched rule: {}", rule.id);
+                // debug!(ctx, "Matched rule: {}", rule.id);
                 if matches!(rule.action, BlazrAction::Block) {
                     rule_hits.action = BlazrAction::Block;
                     break;
@@ -532,7 +537,7 @@ fn process_socket_connect(ctx: LsmContext) -> Result<i32, i32> {
 }
 
 fn process_file_exec(ctx: LsmContext) -> Result<i32, i32> {
-    let lb: *const linux_binprm = unsafe { ctx.arg(0) };
+    let lb: *const c_void = unsafe { ctx.arg(0) };
 
     let buf_ptr = unsafe { LOCAL_BUFFER_LSM.get_ptr_mut(0).ok_or(0i32)? };
     let be: &mut BlazrEvent = unsafe { &mut *buf_ptr };
@@ -540,9 +545,9 @@ fn process_file_exec(ctx: LsmContext) -> Result<i32, i32> {
     process_lsm(&ctx, be)?;
     be.event_type = BlazrEventType::Exec;
 
-    let path_len = unsafe {
-        bpf_probe_read_kernel_str_bytes((*lb).filename as *const u8, &mut be.path)
-            .map_err(|_| 0i32)?
+    let path_len = {
+        let filename = probe_read!(lb, linux_binprm, filename, *const u8, 0i32);
+        unsafe { bpf_probe_read_kernel_str_bytes(filename, &mut be.path).map_err(|_| 0i32)? }
     }
     .len() as usize;
 

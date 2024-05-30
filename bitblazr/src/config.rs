@@ -60,8 +60,8 @@ pub(crate) fn load_config() -> Result<ShieldConfig, anyhow::Error> {
 
     let config = Config::builder()
         .add_source(File::new(
-            &format!("{}config.json5", config_dir),
-            FileFormat::Json5,
+            &format!("{}config.yaml", config_dir),
+            FileFormat::Yaml,
         ))
         .build()?;
 

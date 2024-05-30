@@ -1,6 +1,6 @@
 [package]
 name = "bitblazr"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 publish = false
 
@@ -31,6 +31,8 @@ names = { version = "0.14", default-features = false }
 cloudevents-sdk = "0.7"
 rand = "0.8"
 hex = "0.4"
+sysinfo = "0.30"
+semver = "1.0"
 
 [[bin]]
 name = "bitblazr"

@@ -8,15 +8,17 @@ use aya_ebpf::{macros::map, macros::tracepoint, programs::TracePointContext};
 use aya_log_ebpf::debug;
 
 use crate::common::{
-    read_list_u8, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6, LOCAL_BUFFER, TP_ARCH,
+    read_list_u8, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6, LOCAL_BUFFER, TP_SYSINFO,
 };
 
-use crate::vmlinux::{sockaddr, task_struct};
+use crate::vmlinux::vmlinux::{pid_t, sockaddr};
+use crate::{get_offset, probe_read};
 use aya_ebpf::maps::lpm_trie::Key;
 use aya_ebpf::maps::{Array, LpmTrie, PerfEventByteArray};
-use bitblazr_common::models::BlazrArch;
+use bitblazr_common::models::{BlazrArch, BlazrKernelVersion};
 use bitblazr_common::rules::BlazrRuleClass;
 use bitblazr_common::{BlazrAction, BlazrEvent, BlazrEventClass, BlazrEventType};
+use core::ffi::c_void;
 use no_std_net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[map]
@@ -42,10 +44,9 @@ pub fn tracepoints(ctx: TracePointContext) -> u32 {
 }
 
 fn init_be(ctx: &TracePointContext, be: &mut BlazrEvent) -> Result<(), u32> {
-    let task: *const task_struct = unsafe { bpf_get_current_task() as *const _ };
-    let parent: *const task_struct = unsafe { bpf_probe_read(&(*task).parent).map_err(|_| 0u32)? };
-    let ppid = unsafe { bpf_probe_read(&(*parent).pid).map_err(|_| 0u32)? };
-
+    let task: *const c_void = unsafe { bpf_get_current_task() as *const _ };
+    let parent = probe_read!(task, task_struct, parent, *const c_void, 0u32);
+    let ppid = probe_read!(parent, task_struct, pid, pid_t, 0u32);
     if get_parent_path(ctx, be).is_err() {
         let mut p_comm = ctx.command().map_err(|_| 0u32)?;
         unsafe {
@@ -72,16 +73,10 @@ fn init_be(ctx: &TracePointContext, be: &mut BlazrEvent) -> Result<(), u32> {
 }
 
 fn get_parent_path(_ctx: &TracePointContext, be: &mut BlazrEvent) -> Result<(), u32> {
-    let task: *const task_struct = unsafe { bpf_get_current_task() as *const _ };
-    let mm: *mut crate::vmlinux::mm_struct =
-        unsafe { bpf_probe_read(&(*task).mm).map_err(|_| 0u32)? };
-
-    let argv_p = unsafe {
-        bpf_probe_read(&(*mm).__bindgen_anon_1.arg_start).map_err(|_| 0u32)? as *const u8
-    };
-
+    let task: *const c_void = unsafe { bpf_get_current_task() as *const _ };
+    let mm = probe_read!(task, task_struct, mm, *const c_void, 0u32);
+    let argv_p = probe_read!(mm, mm_struct, __bindgen_anon_1.arg_start, *const u8, 0u32);
     unsafe { bpf_probe_read_user_str_bytes(argv_p, &mut be.p_path).map_err(|_| 0u32)? };
-
     Ok(())
 }
 
@@ -93,12 +88,12 @@ fn process_tps(ctx: TracePointContext) -> Result<u32, u32> {
 
     init_be(&ctx, &mut be).map_err(|_| 1u32)?;
 
-    let arch = unsafe { TP_ARCH.get(0).ok_or(1u32)? };
+    let sys_info = unsafe { TP_SYSINFO.get(0).ok_or(1u32)? };
 
     let call_id: i64 = unsafe { ctx.read_at::<i64>(8).map_err(|_| 1u32)? };
     let args: [u64; 6] = unsafe { ctx.read_at::<[u64; 6]>(16).map_err(|_| 1u32)? };
 
-    match arch {
+    match sys_info.arch {
         BlazrArch::X86_64 => match call_id {
             2 | 85 => process_open(ctx, args, be),
             41 => process_socket(ctx, args, be),

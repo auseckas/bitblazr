@@ -1,0 +1,88 @@
+# Userspace rules are not as restrictire as kernel-side rules - rules can take arrays instead of single values,
+# This is where you define what you would like to log or alert on. Or what should be ignored.
+# Matching is sequentual, thus if you are configuring ignore rules, they should go in front of broader log or alert rules.
+# Actions available here are: 'log', 'alert', or 'ignore'.
+
+ignore:
+- class: file
+  event: open
+  directives:
+    path:
+      starts_with:
+      - /etc/ca-
+
+- class: file
+  event: open
+  directives:
+    path:
+      contains: /.
+      starts_with: /home
+      not:
+        contains: history
+
+log:
+- class: file
+  event: exit
+  directives:
+    path:
+      starts_with:
+      - /bin
+      - /sbin
+      - /usr/bin
+      - /usr/sbin
+      - /usr/local/bin
+      - /usr/local/sbin
+
+- class: file
+  event: open
+  directives:
+    path:
+      starts_with:
+      - /etc/passwd
+      - /sys
+
+alert:
+- class: file
+  event: exec
+  directives:
+    path:
+      starts_with:
+      - /usr/bin/sudo
+
+- class: socket
+  event: listen
+  directives:
+    port:
+      neq:
+      - 80
+      - 443
+
+- class: socket
+  event: connect
+  directives:
+    port:
+      neq:
+      - 53
+      - 80
+      - 123
+      - 443
+
+- class: file
+  event: open
+  directives:
+    path:
+      starts_with:
+      - /etc/shadow
+      - /proc/sys
+      - /usr/bin/sudo
+
+- class: file
+  description: liblzma, sshd backdoor
+  event: exit
+  directives:
+    exit_code:
+      neq: 0
+    path:
+      ends_with: sshd
+    run_time:
+      lte: 2 # in seconds

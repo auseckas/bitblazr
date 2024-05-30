@@ -36,6 +36,20 @@ impl BlazrRuleVar for BlazrArch {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
+pub enum BlazrKernelVersion {
+    Default = 0,
+    SixNinePlus = 1,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct BlazrSysInfo {
+    pub arch: BlazrArch,
+    pub kernel_ver: BlazrKernelVersion,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
 pub enum BlazrEventType {
     Undefined = -1,
     Exec = 0,
