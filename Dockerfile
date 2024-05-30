@@ -16,8 +16,7 @@ RUN cargo install bpf-linker
 
 COPY bitblazr bitblazr
 COPY bitblazr-common bitblazr-common
-COPY probes/lsm-ebpf probes/lsm-ebpf
-COPY probes/tracepoints-ebpf probes/tracepoints-ebpf
+COPY probes probes
 COPY xtask xtask
 COPY Cargo.toml Cargo.toml
 COPY LICENSE LICENSE
