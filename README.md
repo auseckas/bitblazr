@@ -8,6 +8,8 @@
 
 TL;DR: you can go straight to [Getting Started](https://ziosec.com/getting_started/) and quickly launch a BitBlazr Docker container.
 
+**Note**: If you run BitBlazr Docker containers or build the project and get no output, or get an error message mentioning object size issues, please open an issue - it's likely that offsets for the kernel version you are running need to be added to the project.
+
 **BitBlazr** harnesses the power of eBPF to fortify IoT and container environments against potential threats. Blending features from Mandatory Access Controls (MAC) and eBPF-based monitoring programs, the sensor offers a kernel-level rule system for policy enforcement as well as configurable logging targets, empowering users with robust filtering logic and clear delineation between events, alerts, and informational messages.
 
 Its primary objective is to detect initial intrusions and thwart the various pivot steps typically undertaken by malicious actors post-infiltration.
