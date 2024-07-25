@@ -3,7 +3,7 @@
 </p>
 
 [![Build](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml/badge.svg)](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml)
-[![Discord](https://img.shields.io/discord/1219021549710086314?label=Discord&logo=discord)](https://discord.gg/hCbD9RC4)
+[![Discord](https://img.shields.io/discord/1219021549710086314?label=Discord&logo=discord)](https://discord.gg/hHwrNPp7Ew)
 [![Documentation](https://img.shields.io/badge/docs-released-blue.svg?label=Documentation)](https://www.ziosec.com/bitblazr)
 
 TL;DR: you can go straight to [Getting Started](https://ziosec.com/getting_started/) and quickly launch a BitBlazr Docker container.
