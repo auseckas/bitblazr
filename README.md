@@ -4,7 +4,8 @@
 
 [![Build](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml/badge.svg)](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml)
 
-**Note**: This project has been discontinued and is no longer supported. Leaving it on github in hope that someone will find it useful...
+:warning:
+This project has been discontinued and is no longer supported. Leaving it on github in hope that someone will find it useful...
 
 **BitBlazr** harnesses the power of eBPF to fortify IoT and container environments against potential threats. Blending features from Mandatory Access Controls (MAC) and eBPF-based monitoring programs, the sensor offers a kernel-level rule system for policy enforcement as well as configurable logging targets, empowering users with robust filtering logic and clear delineation between events, alerts, and informational messages.
 
@@ -21,10 +22,10 @@ Key features of the BitBlazr sensor include:
 3. Contextual Security: Leveraging process labels to contextualize security enforcement, distinguishing between benign activities and potentially malicious behavior. For instance, while executing the "ls" command within a container may not raise suspicion, launching any shell commands from a web server thread could signal a nefarious intrusion attempt, triggering appropriate security measures.
 4. Send events up to the cloud - HiveMQ integration is included in the open-source version.
 
-The sensor has been tested on x86_64, Arm(32bit), and Aarch64(Arm64) architectures, on Linux kernel 5.15 and above. Instructions on how to build it on Raspberry PI can be found here: https://www.ziosec.com/post/deploying-bitblazr-on-raspberry-pi, or use Docker images for a quick start.
+The sensor has been tested on x86_64, Arm(32bit), and Aarch64(Arm64) architectures, on Linux kernel 5.15 and above.
 
 :warning:
-The project is currently in "beta" - use at your own risk.
+This project has been discontinued - use at your own risk.
 
 <hr>
 
