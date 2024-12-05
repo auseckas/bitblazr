@@ -3,12 +3,8 @@
 </p>
 
 [![Build](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml/badge.svg)](https://github.com/auseckas/bitblazr/actions/workflows/rust.yml)
-[![Discord](https://img.shields.io/discord/1219021549710086314?label=Discord&logo=discord)](https://discord.gg/hHwrNPp7Ew)
-[![Documentation](https://img.shields.io/badge/docs-released-blue.svg?label=Documentation)](https://www.ziosec.com/bitblazr)
 
-TL;DR: you can go straight to [Getting Started](https://ziosec.com/getting_started/) and quickly launch a BitBlazr Docker container.
-
-**Note**: If you're using BitBlazr Docker containers or building the project yourself, you might encounter no output from the sensor or an error related to kernel object size. It is likely associated with kernel structure offsets in the sensor not matching your kernel. Please open an issue and we will fix it.
+**Note**: This project has been discontinued and is no longer supported. Leaving it on github in hope that someone will find it useful...
 
 **BitBlazr** harnesses the power of eBPF to fortify IoT and container environments against potential threats. Blending features from Mandatory Access Controls (MAC) and eBPF-based monitoring programs, the sensor offers a kernel-level rule system for policy enforcement as well as configurable logging targets, empowering users with robust filtering logic and clear delineation between events, alerts, and informational messages.
 
